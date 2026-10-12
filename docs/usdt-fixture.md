@@ -23,6 +23,7 @@ export USDT_TEST_ENV_FILE=/absolute/path/to/private.env
 ./usdt-fixture ps
 ./usdt-fixture check
 ./usdt-fixture smoke
+./usdt-fixture max-smoke
 ./usdt-fixture bridge-smoke
 ./usdt-fixture fund 0xYOUR_TEST_WALLET 10
 ./usdt-fixture balance 0xYOUR_TEST_WALLET
@@ -43,6 +44,7 @@ eval "$(./usdt-fixture env)"
 | `wallet address` | Address of the disposable Core wallet |
 | `wallet send ADDRESS ATOMIC_AMOUNT [Destination]` | Quote and send through Core; optional destination uses `Polygon`, `Bsc`, etc. |
 | `wallet quote ADDRESS ATOMIC_AMOUNT [Destination]` | Inspect a quote without paying |
+| `wallet quote-max ADDRESS` | Inspect a MAX quote (the balance less Core's fee reserve) without paying |
 | `wallet refresh ID` | Reconcile pending execution, including older receipts; Core may retry the identical signed operation |
 | `wallet sync`, then `wallet history` | Scan local payment history; repeat `sync` until `complete` is true |
 | `wallet proof ID BINDING_FILE` | Create the standard proof after execution |
@@ -154,5 +156,6 @@ The overlay is infrastructure wiring; a paid USDT Shop journey and browser unloc
 ./usdt-fixture up
 ./usdt-fixture check
 ./usdt-fixture smoke
+./usdt-fixture max-smoke
 ./usdt-fixture bridge-smoke
 ```

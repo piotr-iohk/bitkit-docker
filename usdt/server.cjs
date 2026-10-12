@@ -62,6 +62,7 @@ async function run() {
     // Shop's verifier can read this fork over the private Compose network.
     servers.push(await serve(ports.reader, upstreamReader(urls.node), '0.0.0.0'));
     let mode = 'healthy';
+    const max = { estimatesWithOverride: 0, paymasterAuthorizations: 0, submissions: 0 };
     servers.push(
       await serve(ports.provider, async (method, params) => {
         if (mode === 'unavailable')
@@ -79,8 +80,12 @@ async function run() {
             ],
           };
         if (method === 'pm_getPaymasterStubData' || method === 'pm_getPaymasterData') {
+          if (method === 'pm_getPaymasterData') max.paymasterAuthorizations++;
           return paymasterData(urls.node, params, mode);
         }
+        if (method === 'eth_estimateUserOperationGas' && params[2] !== undefined)
+          max.estimatesWithOverride++;
+        if (method === 'eth_sendUserOperation') max.submissions++;
         return rpc(urls.alto, method, params);
       }),
     );
@@ -99,6 +104,7 @@ async function run() {
                 chainId: 42161,
                 forkBlock: pins.forkBlock,
                 mode,
+                max: { ...max },
                 urls: {
                   ...urls,
                   gateway: `http://127.0.0.1:${process.env.USDT_GATEWAY_PORT ?? ports.gateway}`,
