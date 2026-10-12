@@ -11,6 +11,7 @@ Run the shared Arbitrum fork, Alto and gateway without spending mainnet funds:
 export USDT_TEST_ENV_FILE=/absolute/path/to/private.env
 ./usdt-fixture up
 ./usdt-fixture check
+./usdt-fixture max-smoke
 ./usdt-fixture smoke
 ./usdt-fixture bridge-smoke
 eval "$(./usdt-fixture env)"
@@ -31,6 +32,7 @@ ADDRESS polygon 3.5`, then `./usdt-fixture orchestra advance DEPOSIT_ID complete
 to deliver local tokens. `orchestra list` shows outgoing quotes; `layerzero
 SOURCE_TX DELIVERED` updates a real USDT0 source message. See [USDT fixture](docs/usdt-fixture.md) for versions, app setup, pending
 payment controls, proof verification, the optional Shop overlay and simulation limits.
+
 
 
 ## Services
@@ -965,6 +967,69 @@ curl -s http://localhost:23000/health | jq '.lnd.balance'
 - Self-signed certificates are used for LND REST API
 - Default credentials are used
 - All services are exposed on localhost only
+
+## MAX quotes
+
+The fixture pins Core `0.8.0-rc4` and the gateway policy that allows only the
+sender's USDT balance-slot override during gas estimation. `max-smoke` funds a
+disposable wallet and requires an affordable MAX quote without submission or
+changing its real balance. Use this `usdt` gateway for MAX; the older
+`arbitrum-provider` fixture does not supply the required metadata and policy.
+For a credential-free archive upstream, apply `bitkit-docker#27` to the same
+fixture checkout before building; it supplies the existing public RPC option.
+
+The test run owns app builds, device installation and mobile deadline/MAX checks.
+
+For a seat whose service host cannot fetch private source, transfer the verified
+images from a build host. Set `USDT_IMAGE_TAG` to the fixture build's reported
+fingerprint, `FIXTURE_SOURCE_BOX` to that build host and `SERVICES_BOX` to the
+seat's services host. This transfers images only:
+
+```sh
+ssh "$FIXTURE_SOURCE_BOX" docker image save \
+  "bitkit-docker/usdt-fixture:$USDT_IMAGE_TAG" \
+  "bitkit-docker/usdt-gateway:$USDT_IMAGE_TAG" | ssh "$SERVICES_BOX" docker image load
+```
+
+The seat's own fixture checkout must contain this fix and `bitkit-docker#27`.
+Use its existing Compose project, and set `SEAT_PORT_OFFSET` to the seat's
+published Bitcoin RPC port minus `43782`. In that checkout on the services host:
+
+```sh
+export USDT_PROJECT="$COMPOSE_PROJECT_NAME"
+export USDT_GATEWAY_PORT=$((23453 + SEAT_PORT_OFFSET))
+export USDT_CONTROL_PORT=$((23454 + SEAT_PORT_OFFSET))
+./usdt-fixture up
+./usdt-fixture check
+./usdt-fixture max-smoke
+./usdt-fixture status
+curl -fsS "http://127.0.0.1:$USDT_GATEWAY_PORT/healthz"
+```
+
+The launcher computes the image fingerprint from the tracked fixture inputs;
+require it to match the transferred tag. Require gateway `status=ok`, chain
+`42161`, provider mode `healthy`, and an affordable MAX quote with
+`submitted=false`. The smoke checks that an estimation override and final
+paymaster authorization occurred, with unchanged real balances and no new
+submission. Keep this chain alive throughout the app checks.
+
+`./usdt-fixture env` prints all four app endpoint overrides. Forward the gateway
+and control ports through the test run's existing relays. For Android on the
+services host, use its own seat-specific adb server and serial:
+
+```sh
+adb -P "$ANDROID_ADB_SERVER_PORT" -s "$SERIAL" reverse tcp:23453 tcp:"$USDT_GATEWAY_PORT"
+adb -P "$ANDROID_ADB_SERVER_PORT" -s "$SERIAL" reverse tcp:23454 tcp:"$USDT_CONTROL_PORT"
+```
+
+That Android build uses gateway `http://127.0.0.1:23453/v1/usdt`; iOS uses the
+run's forwarded loopback gateway. Keep staging Bitcoin, Pubky and VSS settings.
+Fund the app's displayed disposable Arbitrum account with
+`./usdt-fixture fund ADDRESS 20`. Android Core `com.synonym:bitkit-core-android:0.8.0-rc4`
+is published; build the run's rc4-pinned companion with `--refresh-dependencies`
+and its existing Maven authentication. No local-AAR substitute is needed.
+The test run owns app installation, MAX review and deadline-expiry proof on its
+lane's devices. No device is launched on the coordinator.
 
 ## Production Considerations
 

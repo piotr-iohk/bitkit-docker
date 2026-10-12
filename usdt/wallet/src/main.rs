@@ -61,6 +61,10 @@ async fn main() -> Result<()> {
     let result = match command {
         "address" => json!({"address":address}),
         "balance" => json!({"address":address,"balance":wallet.balance().await?}),
+        "quote-max" => {
+            let recipient = args.get(1).context("quote-max requires recipient")?;
+            json!(wallet.quote_max_transfer(recipient.clone(), UsdtDestination::Arbitrum).await?)
+        }
         "quote" | "send" => {
             let recipient = args.get(1).context("send requires recipient and atomic amount")?;
             let amount: u64 = args.get(2).context("send requires atomic amount")?.parse()?;
