@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Add local Orchestra and LayerZero providers with bridge lifecycle controls, real Arbitrum credits/refunds and a Core bridge smoke suite
+- Add an isolated `usdt` Compose profile with pinned Anvil/Alto/gateway images, a containerized Core wallet, real payment/proof smoke checks, controlled paymaster failures and private-network Shop verification
 - Run the Shop's marketplace on Synonym's staging with our own Paykit Server v0.1.0-rc11 behind a Cloudflare quick tunnel (`./shop-mixed`, profile `shop-mixed`)
 - Run a paid Shop order on our own Paykit Server, Lock Server, marketplace service and Shop with Synonym's staging homeserver (`./shop-order`, profile `shop-order`)
 - Rebuild the Paykit fixtures on the paykit-rs version a Bitkit pull request pins with `scripts/follow-app-paykit`
@@ -17,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Issue payment requests payable through an LNURL-pay endpoint, with a separate proposal expiry
 
 ### Changed
+- Keep USDT test history on the local fork, pace and cache archive reads, and preserve upstream throttling for retries so ordinary E2E runs need no paid Alchemy features
+- Pin the local USDT gateway to `3d8c0b6`, including sanitized configuration errors and local LayerZero tracking support
 - Publish every host port at 1024 or above, in the 23000-23999 range for the services Bitkit does not dial by a fixed number (README "Ports" lists them)
 - Move the payment request fixture peers to paykit-rs rc65 on Pubky 0.14.0, the SDK current Bitkit builds pin (the `fixture-issuer` and `rc56-peer` service names stay)
 - Move the marketplace fixture to the Pubky 0.14.0 homeserver, which grants the `LOCK` write locks current Bitkit builds take, with Paykit Server `0ffd4da` (pubky/paykit-server#46, paykit-rs rc65, locks-core rc8) and the driver on `@synonymdev/pubky` 0.14.0
@@ -24,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Simplify LND funding step in README to a single command instead of clipboard-based two-step flow
 
 ### Fixed
+- Pair the Shop and Lock Server denomination-aware setup API, including the seller provisioning helper
+- Bound the Shop build Node heap and serialize app builds to limit peak Docker memory use
+- Preserve the payment server's network namespace when starting Shop apps so the USDT verifier keeps its RPC connection
 - Fund the payment request issuer's wallet before `/pay`, which failed with insufficient funds on a fresh regtest chain
 - Clear stale X display locks in `scripts/trezor-emulator` before starting the emulator, fixing `RuntimeError('Emulator process died')` caused by Xvfb refusing to start over a leftover `/tmp/.X<n>-lock`
 - Validate LNURL-withdraw callback invoices by millisatoshis (`num_msat`) to preserve msat precision for min/max range checks
