@@ -31,17 +31,29 @@ async function smoke() {
     const callsBefore = (await rpc(urls.control, 'status')).max;
     const quote = await wallet('sender', 'quote-max', recipient);
     const callsAfter = (await rpc(urls.control, 'status')).max;
-    assert(callsAfter.estimatesWithOverride > callsBefore.estimatesWithOverride);
-    assert(callsAfter.paymasterAuthorizations > callsBefore.paymasterAuthorizations);
-    assert.equal(callsAfter.submissions, callsBefore.submissions);
+    const calls = Object.fromEntries(
+      Object.keys(callsAfter).map((key) => [key, callsAfter[key] - callsBefore[key]]),
+    );
+    // Core's MAX quote takes at most three fee rounds, each one override estimate and one
+    // paymaster authorization; the counters are the provider's, so nothing else may quote meanwhile.
+    assert(
+      calls.estimatesWithOverride >= 1 && calls.estimatesWithOverride <= 3,
+      JSON.stringify(calls),
+    );
+    assert(
+      calls.paymasterAuthorizations >= 1 && calls.paymasterAuthorizations <= 3,
+      JSON.stringify(calls),
+    );
+    assert.equal(calls.submissions, 0, JSON.stringify(calls));
     assert(quote.amount > 0 && quote.maximum_fee > 0);
-    assert(BigInt(quote.amount) + BigInt(quote.maximum_fee) <= before);
+    // MAX quotes the whole balance: the amount is the balance less the fee reserve.
+    assert.equal(BigInt(quote.amount) + BigInt(quote.maximum_fee), before);
     assert.equal(BigInt(await rpc(urls.control, 'balance', [sender])), before);
     assert.equal(BigInt(await rpc(urls.control, 'balance', [recipient])), 0n);
     assert.equal(BigInt(await rpc(urls.node, 'eth_getBalance', [sender, 'latest'])), 0n);
     assert.equal(await rpc(urls.node, 'eth_getCode', [sender, 'latest']), '0x');
     console.log(
-      JSON.stringify({ passed: true, balance: before.toString(), quote, submitted: false }),
+      JSON.stringify({ passed: true, balance: before.toString(), quote, calls, submitted: false }),
     );
   } finally {
     rmSync(directory, { recursive: true, force: true });
