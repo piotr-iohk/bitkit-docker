@@ -537,6 +537,10 @@ services:
     # `marketplace-driver init`; they never appear in compose or inspect output.
     # The driver's seeds sit in /state/secrets (mode 0700, root), out of this
     # container's reach.
+    # The driver writes the issuer's trust as `[locks] trusted_public_key`, which
+    # 0ffd4da requires; rc11 and later (`follow-app-paykit` builds master for a
+    # newer app) refuse it and read `[signed_services] trusted_public_keys`. A
+    # server whose binary knows `signed_services` gets a copy in that form.
     entrypoint:
       - /bin/sh
       - -c
@@ -547,6 +551,13 @@ services:
         done
         PAYKIT_MASTER_KEY="$$(cat /state/paykit/master-key)"
         export PAYKIT_MASTER_KEY
+        if grep -q signed_services /usr/local/bin/paykit-server && grep -q '^\[locks\]$$' "$$PAYKIT_CONFIG"; then
+          sed -e 's/^\[locks\]$$/[signed_services]/' -e 's/^trusted_public_key = \(".*"\)$$/trusted_public_keys = [\1]/' \
+            "$$PAYKIT_CONFIG" > /tmp/paykit-server.toml
+          PAYKIT_CONFIG=/tmp/paykit-server.toml
+          export PAYKIT_CONFIG
+          echo '[marketplace] Paykit Server reads [signed_services]: trust written in that form'
+        fi
         exec /usr/local/bin/paykit-server
 
   # The fixture driver. Runs one-shot commands (`docker compose run`) through
