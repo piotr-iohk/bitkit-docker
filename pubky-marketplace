@@ -102,6 +102,8 @@ ensure_sources() {
     [ "$(git -C "$SOURCES/locks" rev-parse HEAD)" != "$LOCKS_REV" ]; then
     progress "fetching the pinned sources under $SOURCES"
     fetch_sources >&2
+  else
+    apply_paykit_server_patches >&2 # a patch added since the checkout
   fi
 }
 
