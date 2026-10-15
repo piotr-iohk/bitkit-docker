@@ -4,6 +4,7 @@ const { promisify } = require('node:util');
 const { randomUUID } = require('node:crypto');
 const { mkdtempSync, rmSync } = require('node:fs');
 const path = require('node:path');
+const { setTimeout: delay } = require('node:timers/promises');
 const { rpc } = require('./rpc.cjs');
 const { state, urls } = require('./config.cjs');
 const exec = promisify(execFile);
@@ -52,8 +53,23 @@ async function smoke() {
     assert.equal(BigInt(await rpc(urls.control, 'balance', [recipient])), 0n);
     assert.equal(BigInt(await rpc(urls.node, 'eth_getBalance', [sender, 'latest'])), 0n);
     assert.equal(await rpc(urls.node, 'eth_getCode', [sender, 'latest']), '0x');
+    const sent = await wallet('sender', 'send-quote', quote.id);
+    let payment = sent;
+    for (let attempt = 0; attempt < 40 && payment.status === 'Pending'; attempt++) {
+      await delay(500);
+      payment = await wallet('sender', 'refresh', sent.id);
+    }
+    assert.equal(payment.status, 'Confirmed');
+    assert.equal(payment.amount, quote.amount);
+    assert(payment.fee > 0 && payment.fee <= quote.maximum_fee);
+    assert.equal(BigInt(await rpc(urls.control, 'balance', [recipient])), BigInt(quote.amount));
+    assert.equal(
+      BigInt(await rpc(urls.control, 'balance', [sender])),
+      before - BigInt(quote.amount) - BigInt(payment.fee),
+    );
+    assert.equal(BigInt(await rpc(urls.node, 'eth_getBalance', [sender, 'latest'])), 0n);
     console.log(
-      JSON.stringify({ passed: true, balance: before.toString(), quote, calls, submitted: false }),
+      JSON.stringify({ passed: true, balance: before.toString(), quote, calls, payment }),
     );
   } finally {
     rmSync(directory, { recursive: true, force: true });

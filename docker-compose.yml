@@ -956,6 +956,8 @@ services:
       USDT_BRIDGE_NETWORKS: ethereum,polygon,plasma,stable
       REQUESTS_PER_MINUTE: 10000
       GLOBAL_REQUESTS_PER_MINUTE: 100000
+      PREPARATION_REQUESTS_PER_MINUTE: 10000
+      GLOBAL_PREPARATION_REQUESTS_PER_MINUTE: 100000
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:23453/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 2s

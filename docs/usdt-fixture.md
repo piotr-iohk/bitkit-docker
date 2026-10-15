@@ -56,6 +56,8 @@ The binding JSON uses Core's fields: `payer`, `payee`, `payment_app_id`, `paymen
 
 ## Fidelity and limits
 
+The Compose profile raises both total and preparation limits to 10,000 requests/IP/minute and 100,000 upstream calls/process/minute. These local-only overrides let automated runs share one IP; they do not exercise production abuse protection. The service test suite covers production rate-limit behavior.
+
 - Real deployed USDT0, EntryPoint v0.8, wallet delegate and SingletonPaymaster bytecode execute on the fork. Only the test signer's authorization, test balances and EntryPoint deposit are initialized locally. Contracts check signatures and collect token fees.
 - The local signer replaces Pimlico's hosted pricing/authorization service. It uses a fixed 3,000 USDT/ETH rate. Local gas/fee numbers are not production quotes.
 - Alto runs with `safe-mode=false`: its strict tracing path does not handle this Anvil/EIP-7702 setup. Contract simulation and execution remain real; production bundler reputation/storage-access policy is not covered.

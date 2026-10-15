@@ -24,6 +24,9 @@ upstream reads and excludes pre-fork mainnet logs. Payment history and recovery
 cover transfers made locally after the fork; use disposable test wallets.
 Requires Docker Compose, Git access to the pinned Core/service repositories, jq
 and tar. Builds and tools run inside containers; no host Node or Rust is needed.
+The local gateway raises both total and payment-preparation rate limits for shared
+automated runs. These overrides are test-only; production limits are covered by
+the service tests.
 Use `./usdt-fixture logs` to inspect services and `./usdt-fixture down` to remove
 this isolated stack, its disposable wallets and fork-read cache. Keep existing staging VSS,
 Pubky and rate services. The stack also starts local Orchestra and LayerZero providers. After the
@@ -972,8 +975,9 @@ curl -s http://localhost:23000/health | jq '.lnd.balance'
 
 The fixture pins Core `0.8.0-rc4` and the gateway policy that allows only the
 sender's USDT balance-slot override during gas estimation. `max-smoke` funds a
-disposable wallet and requires an affordable MAX quote without submission or
-changing its real balance. Use this `usdt` gateway for MAX; the older
+disposable wallet, verifies that quoting leaves its balance unchanged, then
+submits the saved quote and checks settlement and the actual fee. Use this `usdt`
+gateway for MAX; the older
 `arbitrum-provider` fixture does not supply the required metadata and policy.
 For a credential-free archive upstream, apply `bitkit-docker#27` to the same
 fixture checkout before building; it supplies the existing public RPC option.

@@ -65,6 +65,10 @@ async fn main() -> Result<()> {
             let recipient = args.get(1).context("quote-max requires recipient")?;
             json!(wallet.quote_max_transfer(recipient.clone(), UsdtDestination::Arbitrum).await?)
         }
+        "send-quote" => {
+            let id = args.get(1).context("send-quote requires quote ID")?;
+            json!(wallet.send(id.clone(), MNEMONIC.into(), passphrase).await?)
+        }
         "quote" | "send" => {
             let recipient = args.get(1).context("send requires recipient and atomic amount")?;
             let amount: u64 = args.get(2).context("send requires atomic amount")?.parse()?;
@@ -124,7 +128,7 @@ async fn main() -> Result<()> {
             }).await?;
             verified.map(|p| json!({"payment_id":p.payment_id,"transfer_id":p.transfer_id,"sender":p.sender,"recipient":p.recipient,"amount":p.amount,"timestamp":p.timestamp})).unwrap_or(Value::Null)
         }
-        _ => bail!("use address, balance, quote/send RECIPIENT ATOMIC_AMOUNT [Destination], quote-max RECIPIENT, deposit, refresh ID, sync, history, proof ID BINDING_FILE, or verify BINDING_FILE PROOF_FILE"),
+        _ => bail!("use address, balance, quote/send RECIPIENT ATOMIC_AMOUNT [Destination], quote-max RECIPIENT, send-quote ID, deposit, refresh ID, sync, history, proof ID BINDING_FILE, or verify BINDING_FILE PROOF_FILE"),
     };
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
