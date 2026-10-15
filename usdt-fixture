@@ -87,7 +87,7 @@ Usage: ./usdt-fixture <command>
   down              Remove this project's containers, disposable wallets and fork cache
   env               Print app/helper endpoint exports
   check             Run fixture lint and protocol tests inside Docker (stack must be up)
-  max-smoke         Check affordable MAX quotes without submission
+  max-smoke         Check MAX quotes, settlement and actual fees
   smoke             Check real Core payments, fees, pending recovery and proofs
   bridge-smoke      Check local bridge funding, receipts and refunds
   wallet ARGS       Run the Core test wallet; read proof/binding files from /evidence

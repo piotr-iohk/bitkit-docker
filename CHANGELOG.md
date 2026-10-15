@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Keep USDT test history on the local fork, pace and cache archive reads, and preserve upstream throttling for retries so ordinary E2E runs need no paid Alchemy features
-- Pin the local USDT gateway to `3d8c0b6`, including sanitized configuration errors and local LayerZero tracking support
+- Pin the local USDT gateway to `299ecba`, including shared token pricing and preparation limits; raise preparation limits only in the local Compose profile
+- Verify MAX settlement and actual fees using the saved quote in `max-smoke`
 - Publish every host port at 1024 or above, in the 23000-23999 range for the services Bitkit does not dial by a fixed number (README "Ports" lists them)
 - Move the payment request fixture peers to paykit-rs rc65 on Pubky 0.14.0, the SDK current Bitkit builds pin (the `fixture-issuer` and `rc56-peer` service names stay)
 - Move the marketplace fixture to the Pubky 0.14.0 homeserver, which grants the `LOCK` write locks current Bitkit builds take, with Paykit Server `0ffd4da` (pubky/paykit-server#46, paykit-rs rc65, locks-core rc8) and the driver on `@synonymdev/pubky` 0.14.0
