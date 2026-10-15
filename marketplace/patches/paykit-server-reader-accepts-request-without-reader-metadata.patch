@@ -1,0 +1,17 @@
+Paykit Server rc9 (4cc8e7b, pubky/paykit-server#47) and later write only bundle_id into a Payment Request's metadata, but its
+reader demo still requires metadata.reader, so the headless buyer rejects every request (protocol_failed). Check reader only when present.
+
+diff --git a/paykit-server/src/bin/paykit-reader-demo/payment_instructions.rs b/paykit-server/src/bin/paykit-reader-demo/payment_instructions.rs
+index cf64ee1..b4014ce 100644
+--- a/paykit-server/src/bin/paykit-reader-demo/payment_instructions.rs
++++ b/paykit-server/src/bin/paykit-reader-demo/payment_instructions.rs
+@@ -117,8 +117,7 @@ fn payment_instructions_at(
+         || terms
+             .metadata
+             .get("reader")
+-            .and_then(|value| value.as_str())
+-            != Some(reader_pubky.to_app_key().as_str())
++            .is_some_and(|value| value.as_str() != Some(reader_pubky.to_app_key().as_str()))
+     {
+         return Err(Failure::ProtocolFailed);
+     }

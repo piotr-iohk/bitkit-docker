@@ -245,11 +245,16 @@ it reads `not_observable`: the fixture holds no key for the app's end of the lin
   setup with the current pin has been run headlessly (`seed` and `verify`) and not yet against an app. The
   Bitkit seller path (`seller-auth`, `purchase --seller bitkit`) has a headless self-test,
   `verify-bitkit-seller`, and has not been run against an app yet.
-- **Patched Paykit Server reader helper.** Since pubky/paykit-server `468f12c` (2 Oct, on master and in #46) every invoice's Payment
-  Request carries an acceptance deadline (`proposal_expires_at`), and the server's own `paykit-reader-demo` still rejects any request
-  that has one, so the headless buyer's `receive` ends in `protocol_failed`. The fixture applies
-  `marketplace/patches/paykit-server-reader-accepts-proposal-expiry.patch` to the pinned tree (image label
-  `tech.masivo.paykit-server-patches`); `fetch_sources` stops when a patch no longer applies, which is the sign upstream fixed it.
+- **Patched Paykit Server reader helper.** The server's own `paykit-reader-demo` rejects requests the server writes, so the headless
+  buyer's `receive` ends in `protocol_failed`, and the fixture patches it (`marketplace/patches`, image label
+  `tech.masivo.paykit-server-patches`):
+  - Since pubky/paykit-server `468f12c` (2 Oct, on master and in #46) every Payment Request carries an acceptance deadline
+    (`proposal_expires_at`), which the helper refused (`paykit-server-reader-accepts-proposal-expiry.patch`). Upstream fixed it in
+    `ee82ab4` (#53, rc10), so the patch names that commit on its `Upstream:` line and `fetch_sources` skips it on a tree that contains it.
+  - Since `4cc8e7b` (#47, rc9) a Payment Request's metadata holds only `bundle_id`, and the helper still requires `metadata.reader`
+    (`paykit-server-reader-accepts-request-without-reader-metadata.patch` checks it only when present; still on master `f9c24db`).
+
+  `fetch_sources` stops when a patch neither applies, nor is applied, nor names an upstream commit the tree contains.
 - **Paykit Server on an unmerged branch.** The apps pin paykit-rs rc65, and only pubky/paykit-server#46 (`0ffd4da`) builds Paykit
   Server on rc65; master (`7ff868b`) is still on rc59. The fixture builds from #46's head until it merges or is released.
 - **Fixed container names.** The base services keep their fixed container names, so another checkout's
