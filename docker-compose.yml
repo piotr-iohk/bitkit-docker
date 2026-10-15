@@ -514,7 +514,7 @@ services:
       labels:
         tech.masivo.paykit-server: ${PAYKIT_SERVER_REV:-0ffd4da2adaab048939e0ea18ff916a27a7cfb0e}
         tech.masivo.paykit-rs: ${PAYKIT_RS_REV:-7185ae7da9315028e5331442d71d739c27f1442c}
-        tech.masivo.paykit-server-patches: ${PAYKIT_SERVER_PATCHES:-paykit-server-reader-accepts-proposal-expiry.patch}
+        tech.masivo.paykit-server-patches: ${PAYKIT_SERVER_PATCHES:-paykit-server-reader-accepts-proposal-expiry.patch paykit-server-reader-accepts-request-without-reader-metadata.patch}
       additional_contexts:
         paykit-lib: ./.marketplace/sources/paykit-rs/paykit-lib
         paykit-sdk: ./.marketplace/sources/paykit-rs/paykit-sdk
@@ -537,6 +537,12 @@ services:
     # `marketplace-driver init`; they never appear in compose or inspect output.
     # The driver's seeds sit in /state/secrets (mode 0700, root), out of this
     # container's reach.
+    # The driver writes the issuer's trust as `[locks] trusted_public_key`, which
+    # 0ffd4da requires; rc11 and later (`./pubky-marketplace build-paykit` with
+    # their pins, README "Pubky Marketplace Journey"; `follow-app-paykit` builds
+    # master when it locks the app's paykit-rs) refuse it and read
+    # `[signed_services] trusted_public_keys`. A server whose binary knows
+    # `signed_services` gets a copy in that form.
     entrypoint:
       - /bin/sh
       - -c
@@ -547,6 +553,13 @@ services:
         done
         PAYKIT_MASTER_KEY="$$(cat /state/paykit/master-key)"
         export PAYKIT_MASTER_KEY
+        if grep -q signed_services /usr/local/bin/paykit-server && grep -q '^\[locks\]$$' "$$PAYKIT_CONFIG"; then
+          sed -e 's/^\[locks\]$$/[signed_services]/' -e 's/^trusted_public_key = \(".*"\)$$/trusted_public_keys = [\1]/' \
+            "$$PAYKIT_CONFIG" > /tmp/paykit-server.toml
+          PAYKIT_CONFIG=/tmp/paykit-server.toml
+          export PAYKIT_CONFIG
+          echo '[marketplace] Paykit Server reads [signed_services]: trust written in that form'
+        fi
         exec /usr/local/bin/paykit-server
 
   # The fixture driver. Runs one-shot commands (`docker compose run`) through
@@ -559,7 +572,8 @@ services:
       context: ./marketplace/driver
       additional_contexts:
         paykit: service:paykit-server
-        fixture: docker-image://bitkit-docker/payment-request-fixture:rc65-shared
+        # the fixture on the server's paykit-rs (`./pubky-marketplace` sets the tag from PAYKIT_RS_TAG)
+        fixture: docker-image://bitkit-docker/payment-request-fixture:${PAYKIT_FIXTURE_TAG:-rc65-shared}
       labels:
         tech.masivo.paykit-server: ${PAYKIT_SERVER_REV:-0ffd4da2adaab048939e0ea18ff916a27a7cfb0e}
         tech.masivo.paykit-rs: ${PAYKIT_RS_REV:-7185ae7da9315028e5331442d71d739c27f1442c}
