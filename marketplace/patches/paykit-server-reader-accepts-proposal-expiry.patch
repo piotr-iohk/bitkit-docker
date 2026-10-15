@@ -1,3 +1,5 @@
+Upstream: ee82ab4fa1d02904c2f0eab382e4a4582d636f8a (pubky/paykit-server#53, in v0.1.0-rc10 and later)
+
 diff --git a/paykit-server/src/bin/paykit-reader-demo/payment_instructions.rs b/paykit-server/src/bin/paykit-reader-demo/payment_instructions.rs
 index f862b81..01e22b4 100644
 --- a/paykit-server/src/bin/paykit-reader-demo/payment_instructions.rs

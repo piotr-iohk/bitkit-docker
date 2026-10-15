@@ -4,7 +4,7 @@
 # paykit-rs commit the local fixture images were built from, and rebuilds and retags the ones that differ.
 # Usage: scripts/follow-app-paykit <owner/repo> <head sha | pull number> [--check]
 #   --check   only print the pin and what would be rebuilt (exit 3 when something is out of date)
-# Exit 4: no Paykit Server revision (the linked pubky/paykit-server PR, else master) locks the app's paykit-rs version.
+# Exit 4: no Paykit Server revision (the linked pubky/paykit-server PR, else master) locks the app's paykit-rs commit.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -123,7 +123,7 @@ else
     fi
   fi
   lock=$(curl -fsS "https://raw.githubusercontent.com/pubky/paykit-server/$server/Cargo.lock")
-  if ! grep -Fq "paykit-rs.git?tag=v$version#$rev" <<<"$lock"; then
+  if ! grep -Fq -e "paykit-rs.git?tag=v$version#$rev" -e "paykit-rs.git?rev=$rev#$rev" <<<"$lock"; then # rc9 and later lock by rev
     echo "paykit-server: $from (${server:0:7}) does not lock paykit-rs v$version; no Paykit Server revision to build" >&2
     exit 4
   fi

@@ -20,6 +20,9 @@ LOCKS_TAG=${LOCKS_TAG:-v0.1.0-rc8}
 SOURCES=.marketplace/sources
 # Compose reads these for the Paykit Server and driver image tags and labels.
 export PAYKIT_SERVER_REV PAYKIT_RS_REV PAYKIT_SERVER_TAG="${PAYKIT_SERVER_REV:0:7}"
+# The driver's `paykit-key-authorization` comes from the payment request fixture built on the same paykit-rs (v0.1.0-rc65 -> rc65-shared).
+export PAYKIT_FIXTURE_TAG="${PAYKIT_RS_TAG##*-}-shared"
+FIXTURE_IMAGE=bitkit-docker/payment-request-fixture:$PAYKIT_FIXTURE_TAG
 PAYKIT_SERVER_PATCHES=$(cd marketplace/patches 2>/dev/null && ls paykit-server-*.patch 2>/dev/null | tr '\n' ' ' | sed 's/ $//')
 export PAYKIT_SERVER_PATCHES
 PAYKIT_SERVER_IMAGE=bitkit-docker/paykit-server:$PAYKIT_SERVER_TAG
@@ -89,9 +92,14 @@ progress() { echo "[${CLI_NAME}] $*" >&2; }
 # present (a fresh clone on a host that built before). Fetch the pinned trees whenever one is missing. This is
 # quiet and offline when they are there; keeping the driver's link to that context stays the simpler wiring than
 # feeding it the helpers by another route, which would tie the driver image to an image name.
+# A tree at another revision (left by a build with other pins) is checked out again, so compose never builds an image tagged for
+# these pins from it.
 ensure_sources() {
   if [ ! -f "$SOURCES/paykit-server/Dockerfile.local" ] || [ ! -d "$SOURCES/paykit-rs/paykit-lib" ] ||
-    [ ! -d "$SOURCES/paykit-rs/paykit-sdk" ] || [ ! -d "$SOURCES/locks" ]; then
+    [ ! -d "$SOURCES/paykit-rs/paykit-sdk" ] || [ ! -d "$SOURCES/locks" ] ||
+    [ "$(git -C "$SOURCES/paykit-server" rev-parse HEAD)" != "$PAYKIT_SERVER_REV" ] ||
+    [ "$(git -C "$SOURCES/paykit-rs" rev-parse HEAD)" != "$PAYKIT_RS_REV" ] ||
+    [ "$(git -C "$SOURCES/locks" rev-parse HEAD)" != "$LOCKS_REV" ]; then
     progress "fetching the pinned sources under $SOURCES"
     fetch_sources >&2
   fi
@@ -138,11 +146,12 @@ fetch_pinned() {
   echo "pinned $dir @ ${rev:0:8}"
 }
 
-# The paykit-server tree resolves paykit-rs and locks by tag through its Cargo.lock, and its Dockerfile.local
-# swaps those for the checkouts below. Fail here, before a long build, if a tag does not resolve to our pins.
+# The paykit-server tree resolves paykit-rs (by tag, or by rev since rc9) and locks by tag through its Cargo.lock, and its
+# Dockerfile.local swaps those for the checkouts below. Fail here, before a long build, if the lock does not resolve to our pins.
 check_lock_pins() {
   local lock="$SOURCES/paykit-server/Cargo.lock"
-  if ! grep -Fq "source = \"git+https://github.com/pubky/paykit-rs.git?tag=$PAYKIT_RS_TAG#$PAYKIT_RS_REV\"" "$lock" ||
+  if ! grep -Fq -e "source = \"git+https://github.com/pubky/paykit-rs.git?tag=$PAYKIT_RS_TAG#$PAYKIT_RS_REV\"" \
+    -e "source = \"git+https://github.com/pubky/paykit-rs.git?rev=$PAYKIT_RS_REV#$PAYKIT_RS_REV\"" "$lock" ||
     ! grep -Fq "source = \"git+https://github.com/pubky/locks.git?tag=$LOCKS_TAG#$LOCKS_REV\"" "$lock"; then
     echo "$lock does not lock paykit-rs $PAYKIT_RS_REV and locks $LOCKS_REV" >&2
     exit 1
@@ -150,15 +159,23 @@ check_lock_pins() {
 }
 
 # Fixes the fixture carries on top of the pinned Paykit Server tree until upstream has them (marketplace/patches, named in the
-# image label tech.masivo.paykit-server-patches). Each applies once; a patch that neither applies nor is applied stops the build.
+# image label tech.masivo.paykit-server-patches). Each applies once; a patch whose `Upstream:` commit the pinned tree already contains
+# is skipped; a patch that neither applies nor is applied otherwise stops the build.
 apply_paykit_server_patches() {
-  local patch
+  local patch upstream
   for patch in marketplace/patches/paykit-server-*.patch; do
     [ -e "$patch" ] || continue
+    upstream=$(sed -n 's/^Upstream: \([0-9a-f]\{40\}\).*/\1/p' "$patch")
     if git -C "$SOURCES/paykit-server" apply --check "$PWD/$patch" 2>/dev/null; then
       git -C "$SOURCES/paykit-server" apply "$PWD/$patch"
       echo "patched $SOURCES/paykit-server with $(basename "$patch")"
-    elif ! git -C "$SOURCES/paykit-server" apply --check --reverse "$PWD/$patch" 2>/dev/null; then
+    elif git -C "$SOURCES/paykit-server" apply --check --reverse "$PWD/$patch" 2>/dev/null; then
+      :
+    elif [ -n "$upstream" ] && { [ ! -f "$SOURCES/paykit-server/.git/shallow" ] ||
+      git -C "$SOURCES/paykit-server" fetch -q --unshallow origin "$PAYKIT_SERVER_REV"; } &&
+      git -C "$SOURCES/paykit-server" merge-base --is-ancestor "$upstream" HEAD 2>/dev/null; then
+      echo "skipped $(basename "$patch"): paykit-server ${PAYKIT_SERVER_REV:0:8} contains its fix ${upstream:0:8}"
+    else
       echo "$patch does not apply to paykit-server ${PAYKIT_SERVER_REV:0:8}; drop it if upstream fixed it" >&2
       exit 1
     fi
@@ -173,9 +190,22 @@ fetch_sources() {
   check_lock_pins
 }
 
+# The payment request fixture image on PAYKIT_RS_REV, built when missing (its Dockerfile moves the fixture's paykit-rs and Pubky pins).
+ensure_fixture() {
+  docker image inspect "$FIXTURE_IMAGE" >/dev/null 2>&1 && return 0
+  progress "building $FIXTURE_IMAGE on paykit-rs ${PAYKIT_RS_REV:0:8}"
+  if docker buildx version >/dev/null 2>&1; then
+    docker build -q -f payment-requests/Dockerfile --build-arg "PAYKIT_RS_REV=$PAYKIT_RS_REV" -t "$FIXTURE_IMAGE" payment-requests
+  else
+    sed -E -e 's/^RUN --mount=[^ ]+ \\/RUN \\/' -e '/^[[:space:]]+--mount=/d' payment-requests/Dockerfile |
+      docker build -q -f - --build-arg "PAYKIT_RS_REV=$PAYKIT_RS_REV" -t "$FIXTURE_IMAGE" payment-requests
+  fi
+}
+
 # Paykit Server and the driver, which carries its helpers and the payment request fixture's `paykit-key-authorization` (scripts/follow-app-paykit sets the pins through the environment).
 build_paykit() {
   fetch_sources
+  ensure_fixture
   if docker buildx version >/dev/null 2>&1; then
     compose build paykit-server
     compose build marketplace-driver
@@ -188,6 +218,7 @@ build() {
   fetch_sources
   # the payment request fixture's image first: the driver copies its `paykit-key-authorization` from it
   compose build homeserver-proxy
+  ensure_fixture
   if docker buildx version >/dev/null 2>&1; then
     compose build pubky-testnet paykit-server
     compose build marketplace-driver
@@ -219,7 +250,7 @@ if named != 1 or server_copy != 1 or "--mount" in text:
 print(text + f'\nLABEL tech.masivo.paykit-server="{server}" tech.masivo.paykit-rs="{paykit}" tech.masivo.paykit-server-patches="{patches}"')
 PY
   docker build -q -f "$SOURCES/Dockerfile.classic" -t "$PAYKIT_SERVER_IMAGE" "$SOURCES"
-  { sed -e "s|^COPY --from=paykit |COPY --from=$PAYKIT_SERVER_IMAGE |" -e "s|^COPY --from=fixture |COPY --from=bitkit-docker/payment-request-fixture:rc65-shared |" marketplace/driver/Dockerfile
+  { sed -e "s|^COPY --from=paykit |COPY --from=$PAYKIT_SERVER_IMAGE |" -e "s|^COPY --from=fixture |COPY --from=$FIXTURE_IMAGE |" marketplace/driver/Dockerfile
     echo "LABEL tech.masivo.paykit-server=\"$PAYKIT_SERVER_REV\" tech.masivo.paykit-rs=\"$PAYKIT_RS_REV\""; } > marketplace/driver/.Dockerfile.classic
   docker build -q -f marketplace/driver/.Dockerfile.classic -t "$DRIVER_IMAGE" marketplace/driver
   rm -f marketplace/driver/.Dockerfile.classic
@@ -227,7 +258,7 @@ PY
 
 images_present() {
   docker image inspect bitkit-docker/pubky-testnet:0.14.0 "$PAYKIT_SERVER_IMAGE" \
-    "$DRIVER_IMAGE" bitkit-docker/payment-request-fixture:rc65-shared >/dev/null 2>&1
+    "$DRIVER_IMAGE" bitkit-docker/payment-request-fixture:rc65-shared "$FIXTURE_IMAGE" >/dev/null 2>&1
 }
 
 wait_ready() {

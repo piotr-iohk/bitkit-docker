@@ -2,10 +2,14 @@ FROM rust:1.98.1-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288
 WORKDIR /usr/src/fixture
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-# scripts/follow-app-paykit passes the paykit-rs commit an app pins; empty keeps the committed pin
+# scripts/follow-app-paykit passes the paykit-rs commit an app pins; empty keeps the committed pin. The fixture's own pubky pin
+# follows the one paykit-lib names at that commit (rc72 moved to Pubky 0.15), so their types stay one crate.
 ARG PAYKIT_RS_REV=
 RUN if [ -n "$PAYKIT_RS_REV" ]; then \
       sed -i -E "s|(paykit-rs.git\", rev = \")[0-9a-f]+|\1$PAYKIT_RS_REV|" Cargo.toml \
+      && cargo update -p paykit-lib -p paykit-sdk \
+      && pubky=$(sed -n 's/^pubky = "\(.*\)"$/\1/p' "$CARGO_HOME"/git/checkouts/paykit-rs-*/"$(echo "$PAYKIT_RS_REV" | cut -c1-7)"/paykit-lib/Cargo.toml) \
+      && [ -n "$pubky" ] && sed -i -E "s|^pubky = \"[^\"]*\"|pubky = \"=$pubky\"|" Cargo.toml \
       && cargo update -p paykit-lib -p paykit-sdk; \
     fi
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
