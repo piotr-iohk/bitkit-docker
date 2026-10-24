@@ -125,13 +125,26 @@ ensure_sources() {
 
 select_lock_policy() {
   MARKETPLACE_LOCK_POLICY=$(python3 scripts/marketplace-policy.py "$SOURCES/locks/locks-core/src/lock_policy.rs")
-  export MARKETPLACE_LOCK_POLICY
+  MARKETPLACE_DRIVER_SOURCE=$(python3 scripts/marketplace-driver-source.py marketplace/driver)
+  export MARKETPLACE_LOCK_POLICY MARKETPLACE_DRIVER_SOURCE
+}
+
+driver_matches() {
+  local expected actual
+  expected=$(python3 scripts/marketplace-driver-source.py marketplace/driver) || return 1
+  actual=$(docker image inspect --format '{{ index .Config.Labels "tech.masivo.marketplace-driver-source" }} {{ index .Config.Labels "tech.masivo.paykit-rs" }} {{ index .Config.Labels "tech.masivo.paykit-server" }}' "$DRIVER_IMAGE" 2>/dev/null) || return 1
+  [ "$actual" = "$expected $PAYKIT_RS_REV $PAYKIT_SERVER_REV" ]
+}
+
+require_driver() {
+  driver_matches || { echo "Marketplace driver image is stale; run ./pubky-marketplace build-paykit" >&2; return 1; }
 }
 
 # The driver runs as root inside its container (it owns the root-only state volume). It hands the files it
 # writes to the host mounts (.marketplace/evidence) to the calling user, so the host can remove them later.
 driver() {
   ensure_sources
+  require_driver
   mkdir -p .marketplace/evidence
   compose run --rm --no-deps --quiet-build -T \
     -e MARKETPLACE_HOST_UID="$(id -u)" -e MARKETPLACE_HOST_GID="$(id -g)" marketplace-driver "$@"
@@ -266,14 +279,14 @@ classic_build() {
   python3 scripts/paykit-classic-dockerfile.py "$SOURCES/paykit-server/Dockerfile.local" "$PAYKIT_SERVER_REV" "$PAYKIT_RS_REV" "$PAYKIT_SERVER_PATCHES" > "$SOURCES/Dockerfile.classic"
   docker build -q -f "$SOURCES/Dockerfile.classic" -t "$PAYKIT_SERVER_IMAGE" "$SOURCES"
   { sed -e "s|^COPY --from=paykit |COPY --from=$PAYKIT_SERVER_IMAGE |" -e "s|^COPY --from=fixture |COPY --from=$FIXTURE_IMAGE |" marketplace/driver/Dockerfile
-    echo "LABEL tech.masivo.paykit-server=\"$PAYKIT_SERVER_REV\" tech.masivo.paykit-rs=\"$PAYKIT_RS_REV\""; } > marketplace/driver/.Dockerfile.classic
+    echo "LABEL tech.masivo.paykit-server=\"$PAYKIT_SERVER_REV\" tech.masivo.paykit-rs=\"$PAYKIT_RS_REV\" tech.masivo.marketplace-driver-source=\"$MARKETPLACE_DRIVER_SOURCE\""; } > marketplace/driver/.Dockerfile.classic
   docker build -q -f marketplace/driver/.Dockerfile.classic -t "$DRIVER_IMAGE" marketplace/driver
   rm -f marketplace/driver/.Dockerfile.classic
 }
 
 images_present() {
   docker image inspect bitkit-docker/pubky-testnet:0.14.0 "$PAYKIT_SERVER_IMAGE" \
-    "$DRIVER_IMAGE" "$FIXTURE_IMAGE" >/dev/null 2>&1 && fixture_matches
+    "$DRIVER_IMAGE" "$FIXTURE_IMAGE" >/dev/null 2>&1 && fixture_matches && driver_matches
 }
 
 wait_ready() {
@@ -365,6 +378,7 @@ case "$command" in
     ;;
   seller-auth-start)
     ensure_sources
+    require_driver
     mkdir -p .marketplace/evidence
     python3 scripts/marketplace-auth.py --project "$(project_name)" --image "$DRIVER_IMAGE" start "$@"
     ;;

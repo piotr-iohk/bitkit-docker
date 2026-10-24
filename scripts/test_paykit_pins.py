@@ -20,6 +20,9 @@ class SavedFixturePinsTests(unittest.TestCase):
         (self.root / 'marketplace/patches/paykit-server-example.patch').write_text('example')
         shutil.copyfile(ROOT / 'pubky-marketplace', self.root / 'pubky-marketplace')
         shutil.copyfile(ROOT / 'scripts/paykit-lock.py', self.root / 'scripts/paykit-lock.py')
+        shutil.copyfile(ROOT / 'scripts/marketplace-policy.py', self.root / 'scripts/marketplace-policy.py')
+        shutil.copyfile(ROOT / 'scripts/marketplace-driver-source.py', self.root / 'scripts/marketplace-driver-source.py')
+        shutil.copytree(ROOT / 'marketplace/driver', self.root / 'marketplace/driver', ignore=shutil.ignore_patterns('node_modules', '.Dockerfile*'))
         self.pins = {'serverRevision': 'a'*40, 'paykitRevision': 'b'*40, 'paykitTag': 'v0.1.0', 'locksRevision': 'c'*40, 'locksTag': 'v0.1.0'}
 
     def command(self, overrides=None, command='pins'):
@@ -32,6 +35,9 @@ class SavedFixturePinsTests(unittest.TestCase):
             (self.root / '.marketplace/sources' / name / '.git').mkdir(parents=True)
         lock = '\n'.join(f'[[package]]\nname = "{name}"\nversion = "0.1.0"\nsource = "git+https://github.com/pubky/{repo}.git?tag=v0.1.0#{revision}"\n' for name, repo, revision in [('paykit-lib', 'paykit-rs', 'b'*40), ('paykit-sdk', 'paykit-rs', 'b'*40), ('locks-core', 'locks', 'c'*40)])
         (self.root / '.marketplace/sources/paykit-server/Cargo.lock').write_text(lock)
+        policy = self.root / '.marketplace/sources/locks/locks-core/src/lock_policy.rs'
+        policy.parent.mkdir(parents=True)
+        policy.write_text('fn validate_paykit_payment_params(\nparams: &Value,\n) -> Result<(), Error> { if !matches!(key.as_str(), "recipient_pubky" | "amount" | "asset") { return Err(error); } }')
         binaries = self.root / 'bin'; binaries.mkdir()
         (binaries / 'git').write_text('#!/usr/bin/env python3\nimport sys\nif "rev-parse" in sys.argv:\n print(("a" if "paykit-server" in sys.argv[2] else "b" if "paykit-rs" in sys.argv[2] else "c")*40)\n')
         (binaries / 'docker').write_text('#!/usr/bin/env python3\nimport os,sys,json\nwith open(os.environ["EVENTS"],"a") as out:out.write(json.dumps(sys.argv[1:])+"\\n")\nif sys.argv[1]=="run": print(os.environ.get("OBSERVED_REV",os.environ["PAYKIT_RS_REV"]))\n')

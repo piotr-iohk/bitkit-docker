@@ -575,6 +575,7 @@ services:
         # the fixture on the server's paykit-rs (`./pubky-marketplace` sets the tag from PAYKIT_RS_TAG)
         fixture: docker-image://bitkit-docker/payment-request-fixture:${PAYKIT_FIXTURE_TAG:-rc65-shared}
       labels:
+        tech.masivo.marketplace-driver-source: ${MARKETPLACE_DRIVER_SOURCE:-unrecorded}
         tech.masivo.paykit-server: ${PAYKIT_SERVER_REV:-0ffd4da2adaab048939e0ea18ff916a27a7cfb0e}
         tech.masivo.paykit-rs: ${PAYKIT_RS_REV:-7185ae7da9315028e5331442d71d739c27f1442c}
     network_mode: service:pubky-testnet

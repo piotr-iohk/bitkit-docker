@@ -769,6 +769,11 @@ that field and therefore omits it. Unknown schemas fail before a driver starts.
 Use the wrapper for marketplace driver commands so this selection accompanies
 the retained image/source pins.
 
+Driver images also carry a SHA-256 identity of the Dockerfile and all its local
+COPY inputs. `follow-app-paykit` rebuilds a missing/mismatched identity even when
+the Paykit dependency revision is unchanged. `up` rebuilds stale images, and
+individual driver commands refuse a stale image with a `build-paykit` instruction.
+
 Both URLs are `pubkyauth://signin_grant?...` links whose one-time secret must stay out of logs and evidence. On Android run each printed `android` command (`adb shell "am start -a android.intent.action.VIEW -d '<auth_url>'"`; keep the double quotes, or the device shell cuts the URL at the first `&`). With several devices or emulators pass `--serial <adb-serial>` to `setup-url` or `seller-auth` and the command gets `-s <adb-serial>`. On iOS the setup request opens through the printed `ios_url` (`xcrun simctl openurl <simulator-id> '<ios_url>'`); the marketplace grant has no iOS deep link, so put its `auth_url` on the simulator clipboard (`printf %s '<auth_url>' | xcrun simctl pbcopy <simulator-id>`) and use Scan QR Code, then Paste QR Code (E2E builds also have Enter QRCode String). The marketplace request goes through the testnet's HTTP relay on `localhost:15412` (published by the fixture; on Android it is one of the `adb reverse` ports above) and expires after about five minutes; pass `--relay https://httprelay.pubky.app/inbox/` to use the public relay instead. The setup request still uses the public relay and needs outbound internet.
 
 The fixture cannot check a Bitkit seller's payout address against the wallet's xpub, because Paykit Server keeps the xpub and the derived address to itself. It checks that the Payment Request address is a regtest native SegWit address, that exactly the amount is paid to it on chain, and Paykit Server's signed status (`detected`, then `confirmed` with a matching amount). That the address belongs to the wallet shows in the seller app: its balance rises by the amount and the received activity carries the same txid as `status`. `./pubky-marketplace verify-bitkit-seller` runs the whole path with a headless stand-in for the wallet and does check the payout against the stand-in's xpub.
