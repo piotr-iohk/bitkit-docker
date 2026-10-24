@@ -77,7 +77,12 @@ class AuthOperations:
         if container is None:
             return {"operation": operation, "status": "uncertain",
                     "detail": "Container is absent; this operation will not be replayed"}
-        logs = self.docker("logs", "--tail", "20", record["container"])
+        logged = self.run(["docker", "logs", "--tail", "20", record["container"]],
+                          cwd=self.root, text=True, capture_output=True, timeout=60)
+        if logged.returncode:
+            raise RuntimeError("Could not read the owned authorization listener log")
+        # Non-TTY Docker logs separates driver errors onto stderr.
+        logs = logged.stdout + "\n" + logged.stderr
         events = []
         for line in logs.splitlines():
             try:
@@ -93,7 +98,17 @@ class AuthOperations:
         if state["ExitCode"] == 0 and events and events[-1]["status"] == "approved":
             return {**events[-1], "operation": operation}
         # Never echo raw grant URLs or error logs in a failed terminal response.
-        return {"operation": operation, "status": "failed", "exitCode": state["ExitCode"]}
+        reason = "grant-listener-failed"
+        for needle, code in (("fixture is not seeded", "fixture-not-seeded"),
+                             ("no seller yet", "fixture-not-seeded"),
+                             ("no approval within", "approval-timeout"),
+                             ("does not allow writing", "grant-capability-mismatch"),
+                             ("restores to another identity", "grant-identity-mismatch")):
+            if needle in logs:
+                reason = code
+                break
+        return {"operation": operation, "status": "failed", "exitCode": state["ExitCode"],
+                "reason": reason}
 
     def start(self, operation, args):
         path = self.path(operation)

@@ -24,6 +24,7 @@ import { HDKey } from '@scure/bip32';
 import { AuthFlowKind, Keypair, Pubky, PublicKey } from '@synonymdev/pubky';
 import { mergeTrust, missingTrust, requiredKeys, trustedKeys, withTrust } from './trust.mjs';
 import { paymentParams, invoiceBody } from './payment-policy.mjs';
+import { requireFixture, selectSeller, rememberBitkitSeller } from './seller-state.mjs';
 
 const LOCK_POLICY = process.env.MARKETPLACE_LOCK_POLICY ?? 'legacy';
 
@@ -125,9 +126,7 @@ async function readSecret(name) {
 
 async function readFixture() {
   const fixture = await readJson(FIXTURE_FILE, null);
-  if (STAGING && !fixture?.bitkit_seller) fail('no Bitkit seller yet; run: ./shop-mixed seller-auth');
-  if (!STAGING && !fixture?.seller) fail('fixture is not seeded; run: ./pubky-marketplace seed');
-  return fixture;
+  return requireFixture(fixture, STAGING);
 }
 
 // ------------------------------------------------------------------- bitcoind
@@ -277,11 +276,7 @@ async function sellerSession(seller) {
 
 // The seller record for `--seller`: the headless seller (default), the Bitkit seller, or its approved pubky.
 function pickSeller(fixture, which = STAGING ? 'bitkit' : 'headless') {
-  if (which === 'headless') return fixture.seller;
-  const bitkit = fixture.bitkit_seller;
-  if (!bitkit) fail('no Bitkit seller; run: ./pubky-marketplace seller-auth');
-  if (which === 'bitkit' || which === bitkit.pubky) return bitkit;
-  fail(`--seller must be headless, bitkit or ${bitkit.pubky}`);
+  return selectSeller(fixture, which);
 }
 
 const sellerOf = (fixture, pubky) => [fixture.seller, fixture.bitkit_seller].find((entry) => entry?.pubky === pubky) ?? fixture.seller;
@@ -561,7 +556,7 @@ async function createBuyer(sellerPubky) {
   const prepared = await runHelper(
     'paykit-reader-demo',
     { version: 1, operation: 'prepare', reader_secret: b64url(seed) },
-    readerEnv(sellerPubky ?? fixture.seller.pubky),
+    readerEnv(sellerPubky ?? fixture.seller?.pubky ?? fixture.bitkit_seller.pubky),
   );
   if (prepared.code !== 0) fail(`buyer receiver marker failed: ${[prepared.stdout, prepared.stderr].filter(Boolean).join(' ')}`);
   fixture.buyer = { pubky: buyer, receiver_path: BUYER_PATH, kind: 'headless' };
@@ -1260,21 +1255,18 @@ async function adoptBitkitSeller(session, kind) {
   const restored = await pubkyClient().restoreSession(secret);
   if (restored.info.publicKey.toString() !== pubky) fail('the exported grant session restores to another identity');
   await writeSecret(`${SECRETS}/${BITKIT_SESSION_SECRET}`, secret);
-  // On staging the Bitkit seller is the first seller the fixture has.
-  const fixture = STAGING ? await readJson(FIXTURE_FILE, {}) : await readFixture();
-  const previous = fixture.bitkit_seller?.pubky === pubky ? fixture.bitkit_seller : {};
+  // A native seller can be the first seller on either backend. Its grant is
+  // already verified above; no headless identity/spending key is needed.
+  const fixture = await readJson(FIXTURE_FILE, {});
   const paykitSetup = await setupStatus(pubky);
-  fixture.bitkit_seller = {
-    ...previous,
+  const updated = rememberBitkitSeller(fixture, {
     pubky,
     kind,
     client_id: LOCKS_CLIENT_ID,
     capabilities: LOCKS_CAPS,
-    marketplace_grant_at: new Date().toISOString(),
-    ...(paykitSetup === 'ready' ? { setup_completed_at: previous.setup_completed_at ?? new Date().toISOString() } : {}),
-  };
-  await writeJson(FIXTURE_FILE, fixture);
-  return { seller: fixture.bitkit_seller, paykitSetup };
+  }, paykitSetup === 'ready', new Date().toISOString());
+  await writeJson(FIXTURE_FILE, updated);
+  return { seller: updated.bitkit_seller, paykitSetup };
 }
 
 // Print the marketplace grant request for the Bitkit seller wallet, wait for its approval and keep the grant
@@ -1283,7 +1275,6 @@ async function sellerAuth(args) {
   const relay = flag(args, '--relay') ?? LOCKS_RELAY;
   const seconds = Number(flag(args, '--timeout') ?? 300);
   if (!Number.isFinite(seconds) || seconds <= 0) fail('usage: seller-auth [--relay <url>] [--timeout <seconds>] [--serial <adb-serial>]');
-  if (!STAGING) await readFixture();
   const { flow, authUrl } = await startLocksGrant(relay);
   // One compact JSON object per line: the first line is the request, the last one the approval.
   outLine({

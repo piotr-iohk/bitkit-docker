@@ -19,7 +19,7 @@ class DriverIdentity(unittest.TestCase):
             root = Path(temp)
             shutil.copytree(ROOT/'marketplace/driver', root/'driver', ignore=shutil.ignore_patterns('node_modules', '.Dockerfile*'))
             root = root/'driver'; original = source.digest(root)
-            for name in ('Dockerfile', 'driver.mjs', 'trust.mjs', 'payment-policy.mjs', 'package.json', 'package-lock.json'):
+            for name in ('Dockerfile', 'driver.mjs', 'trust.mjs', 'payment-policy.mjs', 'seller-state.mjs', 'package.json', 'package-lock.json'):
                 p=root/name; old=p.read_bytes();p.write_bytes(old+b'\n')
                 self.assertNotEqual(source.digest(root), original, name)
                 p.write_bytes(old)

@@ -747,6 +747,11 @@ To make a Bitkit wallet the seller, the wallet approves two Pubky requests for t
 For an agent or a synchronous tool connection, use the split-phase grant flow
 instead of waiting inside `seller-auth`:
 
+Two native wallets do not need `seed`. Complete the seller's watch-only setup
+above, approve its marketplace grant below, then use `--seller bitkit` and the
+native buyer's public key. The fixture stores only that seller's approved grant;
+it does not create a headless seller identity or hold the native wallet's keys.
+
 ```sh
 ./pubky-marketplace seller-auth-start seller-1 --timeout 300
 ./pubky-marketplace seller-auth-status seller-1  # poll until awaiting_approval includes auth_url
@@ -761,6 +766,8 @@ Changed arguments or image revisions require a new ID. An absent container after
 a recorded start is `uncertain` and is not replayed. Use a new explicit ID for a
 new attempt after investigating. `down` removes only listeners with matching
 fixture ownership and image identity before deleting the fixture state volumes.
+Failed status includes a bounded reason code; private grant URLs and raw stderr
+are omitted.
 
 The wrapper selects the lock/invoice schema from its verified pinned Locks
 source. Stable Locks requires an explicit 24-hour `payment_in` in both the

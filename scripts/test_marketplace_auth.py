@@ -13,6 +13,7 @@ class Docker:
     def __init__(self):
         self.containers = {}
         self.logs = {}
+        self.errors = {}
         self.starts = 0
         self.lose_response = False
         self.image = "sha256:original"
@@ -43,6 +44,7 @@ class Docker:
             output = "container-id"
         elif args[0] == "logs":
             output = self.logs[args[-1]]
+            error = self.errors.get(args[-1], "")
         elif args[:2] == ["rm", "-f"]:
             del self.containers[args[2]]
         else:
@@ -112,7 +114,19 @@ class AuthTests(unittest.TestCase):
         container = next(iter(self.docker.containers.values()))
         container["State"] = {"Running": False, "ExitCode": 1}
         result = self.manager.start("seller", [])
-        self.assertEqual(result, {"operation": "seller", "status": "failed", "exitCode": 1})
+        self.assertEqual(result, {"operation": "seller", "status": "failed", "exitCode": 1,
+                                  "reason": "grant-listener-failed"})
+        self.assertEqual(self.docker.starts, 1)
+
+    def test_stderr_failure_has_a_safe_actionable_reason_without_private_log_text(self):
+        self.manager.start("seller", [])
+        name = next(iter(self.docker.containers))
+        self.docker.containers[name]["State"] = {"Running": False, "ExitCode": 1}
+        self.docker.errors[name] = 'FAIL: fixture is not seeded; run seed\nprivate pubkyauth://secret?token=hidden'
+        result = self.manager.status("seller")
+        self.assertEqual(result['reason'], 'fixture-not-seeded')
+        self.assertNotIn('hidden', json.dumps(result))
+        self.assertNotIn('pubkyauth', json.dumps(result))
         self.assertEqual(self.docker.starts, 1)
 
     def test_cleanup_is_exact_and_private_state_contains_no_grant_url(self):
