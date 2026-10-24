@@ -729,6 +729,27 @@ Then, with the buyer wallet:
 ./pubky-marketplace peers --buyer <buyer pubky> --wait 60  # after the purchase: Paykit Server's link to the buyer is connected
 ```
 
+For the native request's raw asset/endpoint assertion, first read its actual
+`PaymentRequestRow-<uuid>` in Bitkit, then run:
+
+```sh
+# Linux prerequisite for this optional observation command:
+sudo apt-get install python3-nacl
+./pubky-marketplace request-info <bundle> <native-request-uuid>
+```
+
+This reads one delivered request's authenticated durable SDK handoff and prints
+only its correlated UUID, lowercase asset, amount and regtest endpoint JSON.
+Compare that UUID with the native row. It never accepts/pays, imports a session,
+changes the database or exports fixture keys. It supports the app-aligned
+semantic-outbox server (`caf2b6d`); older layouts fail explicitly. A request not
+yet acknowledged as delivered can be polled read-only. The native request UUID
+and the purchase bundle are different identities. The QA worker installs PyNaCl
+inside its disposable guest; operator credentials stay outside it.
+
+Fixture tests use `python3 -m pip install PyNaCl==1.6.0` in a private virtualenv,
+then that Python's `-m unittest discover -s scripts -p 'test_*.py'`.
+
 Pay the request in the app, then confirm with `./pubky-marketplace mine --bundle <bundle>`, `./pubky-marketplace wait <bundle> confirmed` and `./pubky-marketplace status <bundle>`. By default the seller of a purchase is the fixture's headless seller, and `verify` always uses it.
 
 To make a Bitkit wallet the seller, the wallet approves two Pubky requests for the same identity: the Paykit watch-only setup (it gives Paykit Server the wallet's account xpub, so payouts land in that wallet) and a write grant on `/pub/app.locks/` (the role Locks plays: the driver publishes the payment lock with the granted session). One request cannot carry both, because the apps accept the watch-only claim only for exactly the two Paykit paths.
