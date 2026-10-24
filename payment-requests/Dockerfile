@@ -16,7 +16,8 @@ RUN if [ -n "$PAYKIT_RS_REV" ]; then \
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/usr/src/fixture/target \
-    revision=$(sed -n 's|^source = "git+https://github.com/pubky/paykit-rs.git?rev=[0-9a-f]*#\([0-9a-f]*\)"|\1|p' Cargo.lock | sort -u) \
+    cargo fetch --locked \
+    && revision=$(sed -n 's|^source = "git+https://github.com/pubky/paykit-rs.git?rev=[0-9a-f]*#\([0-9a-f]*\)"|\1|p' Cargo.lock | sort -u) \
     && test "${#revision}" = 40 \
     && features=$(sh ./select-sdk-features.sh "$CARGO_HOME"/git/checkouts/paykit-rs-*/"$(printf '%s' "$revision" | cut -c1-7)"/paykit-sdk/src/runtime/payment_requests.rs) \
     && cargo build --release --locked $features && install -Dm755 target/release/bitkit-payment-request-fixture /out/fixture \
