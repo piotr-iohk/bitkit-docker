@@ -71,6 +71,9 @@ Fixture:
                                        seller wallet to approve, with the Android and iOS handoff, wait for it
                                        and keep the grant session for purchase --seller bitkit. Prints one JSON
                                        object per line: awaiting_approval first, approved last
+    seller-auth-start <operation> [--timeout <seconds>] [--serial <adb-serial>] [--relay <url>]
+                                       Start one owned grant listener without waiting for device approval
+    seller-auth-status <operation>      Poll that listener for its auth URL or final approval; never restart it
     fund <address> [sats]              Send regtest coins (default 1000000 sats) and mine one block
     peers [--seller headless|bitkit|<pubky>] [--buyer <pubky>] [--bundle <id>] [--wait <seconds>]
                                        Report the seller and buyer as linked peers: receiver markers, setup
@@ -303,6 +306,7 @@ up() {
 down() {
   local project
   project="$(project_name)"
+  python3 scripts/marketplace-auth.py --project "$project" --image "$DRIVER_IMAGE" cleanup
   progress "removing the fixture and payment request containers"
   # The peers run in the testnet's namespace and hold identities from it, so they go with it. Their profile is
   # only named here so that rm reaches them; it does nothing when they were never created.
@@ -351,6 +355,14 @@ case "$command" in
     down
     up
     progress "reset: done; seed next"
+    ;;
+  seller-auth-start)
+    ensure_sources
+    mkdir -p .marketplace/evidence
+    python3 scripts/marketplace-auth.py --project "$(project_name)" --image "$DRIVER_IMAGE" start "$@"
+    ;;
+  seller-auth-status)
+    python3 scripts/marketplace-auth.py --project "$(project_name)" --image "$DRIVER_IMAGE" status "$@"
     ;;
   seed | info | setup-url | setup-wait | seller-auth | fund | peers | purchase | receive | pay | status | mine | wait | verify | verify-bitkit-seller)
     driver "$command" "$@"
