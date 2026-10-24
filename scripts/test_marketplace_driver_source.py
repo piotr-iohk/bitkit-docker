@@ -2,6 +2,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -14,6 +16,28 @@ spec.loader.exec_module(source)
 
 
 class DriverIdentity(unittest.TestCase):
+    def test_both_images_ship_the_actual_drivers_relative_module_closure(self):
+        driver = ROOT/'marketplace/driver'
+        imports = re.findall(r"from\s+['\"](\./[^'\"]+\.mjs)['\"]", (driver/'driver.mjs').read_text())
+        self.assertTrue(imports)
+        for name in ('Dockerfile', 'Dockerfile.staging'):
+            with self.subTest(dockerfile=name), tempfile.TemporaryDirectory() as temp:
+                image = Path(temp)
+                for line in (driver/name).read_text().splitlines():
+                    parts = shlex.split(line, comments=True)
+                    if not parts or parts[0] != 'COPY' or parts[1].startswith('--from='):
+                        continue
+                    self.assertEqual(parts[-1], './')
+                    for source_file in parts[1:-1]:
+                        shutil.copyfile(driver/source_file, image/source_file)
+                # Resolve/import the production relative modules using only the
+                # files actually shipped by each Dockerfile, without npm, Docker,
+                # private fixtures or server calls. Missing COPY inputs fail.
+                script = 'for (const file of JSON.parse(process.argv[1])) await import(file);'
+                result = subprocess.run(['node', '--input-type=module', '-e', script, json.dumps(imports)],
+                                        cwd=image, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stdout+result.stderr)
+
     def test_every_local_copy_input_invalidates_identity_but_unrelated_files_do_not(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
