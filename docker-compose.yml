@@ -581,6 +581,7 @@ services:
     depends_on:
       - pubky-testnet
     environment:
+      MARKETPLACE_LOCK_POLICY: ${MARKETPLACE_LOCK_POLICY:-legacy}
       BITCOIN_RPC_URL: http://bitcoind:43782
       BITCOIN_RPC_USER: polaruser
       BITCOIN_RPC_PASS: polarpass

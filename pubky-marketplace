@@ -120,6 +120,12 @@ ensure_sources() {
   else
     apply_paykit_server_patches >&2 # a patch added since the checkout
   fi
+  select_lock_policy
+}
+
+select_lock_policy() {
+  MARKETPLACE_LOCK_POLICY=$(python3 scripts/marketplace-policy.py "$SOURCES/locks/locks-core/src/lock_policy.rs")
+  export MARKETPLACE_LOCK_POLICY
 }
 
 # The driver runs as root inside its container (it owns the root-only state volume). It hands the files it
@@ -204,6 +210,7 @@ fetch_sources() {
   fetch_pinned https://github.com/pubky/paykit-rs.git "$SOURCES/paykit-rs" "$PAYKIT_RS_REV"
   fetch_pinned https://github.com/pubky/locks.git "$SOURCES/locks" "$LOCKS_REV"
   check_lock_pins
+  select_lock_policy
 }
 
 # The payment request fixture image on PAYKIT_RS_REV, built when missing (its Dockerfile moves the fixture's paykit-rs and Pubky pins).

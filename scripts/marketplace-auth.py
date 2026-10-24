@@ -99,7 +99,8 @@ class AuthOperations:
         path = self.path(operation)
         argv = ["seller-auth", *args]
         image = json.loads(self.docker("image", "inspect", self.image))[0]["Id"]
-        intent = {"owner": self.owner, "project": self.project, "imageId": image, "argv": argv}
+        intent = {"owner": self.owner, "project": self.project, "imageId": image, "argv": argv,
+                  "lockPolicy": os.environ.get("MARKETPLACE_LOCK_POLICY", "legacy")}
         fingerprint = hashlib.sha256(json.dumps(intent, sort_keys=True).encode()).hexdigest()
         if path.exists():
             if json.loads(path.read_text())["fingerprint"] != fingerprint:

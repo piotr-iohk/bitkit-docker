@@ -23,6 +23,9 @@ import { blake3 } from '@noble/hashes/blake3';
 import { HDKey } from '@scure/bip32';
 import { AuthFlowKind, Keypair, Pubky, PublicKey } from '@synonymdev/pubky';
 import { mergeTrust, missingTrust, requiredKeys, trustedKeys, withTrust } from './trust.mjs';
+import { paymentParams, invoiceBody } from './payment-policy.mjs';
+
+const LOCK_POLICY = process.env.MARKETPLACE_LOCK_POLICY ?? 'legacy';
 
 const STATE = '/state';
 const SECRETS = `${STATE}/secrets`;
@@ -697,7 +700,7 @@ function lockFor({ seller, sats, issuer }) {
       {
         criterion_id: 'criterion-1',
         verifier_type: 'paykit-payment',
-        params: { recipient_pubky: seller, amount: String(sats), asset: 'BTC' },
+        params: paymentParams(seller, sats, LOCK_POLICY),
       },
     ],
     lock_logic: { type: 'all', criteria: ['criterion-1'] },
@@ -830,7 +833,7 @@ async function purchase(args) {
 
   const bundleId = newBundleId();
   const lockResource = `${seller.pubky}${lockPath}`;
-  const response = await signedPost('/invoices', { bundle_id: bundleId, lock_resource: lockResource, reader });
+  const response = await signedPost('/invoices', invoiceBody(bundleId, lockResource, reader, LOCK_POLICY));
   // Paykit Server answers 200 with invoice_created_at and payment_deadline (204 with no body before the Locks payment window)
   if (response.status !== 200 && response.status !== 204) {
     const code = response.json?.error?.code ? ` ${response.json.error.code}` : '';
