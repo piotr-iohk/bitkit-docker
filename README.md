@@ -454,6 +454,28 @@ Paykit Server and the driver from the Paykit Server PR the app PR links (its mer
 else from master, when that revision locks the same paykit-rs tag (exit 4 when none does). Afterwards every
 tag Compose resolves for those images, `COMPOSE_FILE` overrides included, points at the new build.
 
+Registry-backed releases are checked by their exact `Cargo.lock` checksums. The
+helper checks both Paykit packages and Locks, validates their clean packaged Git
+revision, and compares their original manifests and Rust/source files with that
+revision. Package VCS metadata alone does not establish source equivalence.
+Checksummed public packages and source archives are cached under
+`.marketplace/provenance`; no operator credentials are stored there.
+
+After a successful alignment, `.marketplace/paykit-pins.json` retains the verified
+public revisions for later `pubky-marketplace` commands. Explicit environment
+overrides still take precedence. Stable releases use tags such as `0.1.0-shared`;
+prereleases keep tags such as `rc65-shared`. The classic Docker builder supports
+both the older Locks source context and current registry-release Dockerfiles;
+unknown build layouts still fail before a build.
+
+```bash
+scripts/follow-app-paykit synonymdev/bitkit-android <full-head-sha>
+./pubky-marketplace pins                    # inspect the selected public source pins
+./pubky-marketplace up
+scripts/follow-app-paykit synonymdev/bitkit-android <full-head-sha> --check
+python3 -B -m unittest discover -s scripts -p 'test_paykit*.py' -v
+```
+
 #### Homeserver proxy (explicit holds and selective faults)
 
 The apps reach the testnet homeserver through `homeserver-proxy`, which the

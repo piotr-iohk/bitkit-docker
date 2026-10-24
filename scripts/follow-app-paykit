@@ -123,11 +123,11 @@ else
     fi
   fi
   lock=$(curl -fsS "https://raw.githubusercontent.com/pubky/paykit-server/$server/Cargo.lock")
-  if ! grep -Fq -e "paykit-rs.git?tag=v$version#$rev" -e "paykit-rs.git?rev=$rev#$rev" <<<"$lock"; then # rc9 and later lock by rev
+  if ! alignment=$(printf '%s' "$lock" | python3 scripts/paykit-lock.py --lock - --paykit-rev "$rev" --cache .marketplace/provenance); then
     echo "paykit-server: $from (${server:0:7}) does not lock paykit-rs v$version; no Paykit Server revision to build" >&2
     exit 4
   fi
-  locks=$(sed -n 's|^source = "git+https://github.com/pubky/locks.git?tag=\([^#]*\)#\([0-9a-f]*\)"|\1 \2|p' <<<"$lock" | head -1)
+  locks=$(jq -r '.locks | .tag + " " + .revision' <<<"$alignment")
   echo "paykit-server: $from at ${server:0:7} locks paykit-rs v$version and locks ${locks%% *}"
   if [ "$check" != --check ]; then
     start=$SECONDS
@@ -143,4 +143,15 @@ else
 fi
 
 [ "$check" = --check ] && [ "$stale" = 1 ] && exit 3
+# Later commands retain only the verified public pins, never an auth token.
+if [ "$check" != --check ]; then
+  [ -n "${server:-}" ] || server=$(docker image inspect --format '{{ index .Config.Labels "tech.masivo.paykit-server" }}' "$server_image")
+  lock=$(curl -fsS "https://raw.githubusercontent.com/pubky/paykit-server/$server/Cargo.lock")
+  alignment=$(printf '%s' "$lock" | python3 scripts/paykit-lock.py --lock - --paykit-rev "$rev" --cache .marketplace/provenance)
+  mkdir -p .marketplace/provenance
+  printf '%s\n' "$alignment" > .marketplace/provenance/server-alignment.json
+  jq -n --arg server "$server" --arg paykit "$rev" --arg tag "v$version" --argjson alignment "$alignment" \
+    '{serverRevision:$server,paykitRevision:$paykit,paykitTag:$tag,locksRevision:$alignment.locks.revision,locksTag:$alignment.locks.tag}' > .marketplace/paykit-pins.json.tmp
+  mv .marketplace/paykit-pins.json.tmp .marketplace/paykit-pins.json
+fi
 exit 0
