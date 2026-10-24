@@ -4,8 +4,9 @@ import io
 import json
 import tarfile
 import unittest
+import sys
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location("paykit_lock", Path(__file__).with_name("paykit-lock.py"))
 helper = importlib.util.module_from_spec(spec)
@@ -53,6 +54,20 @@ class PaykitLockTests(unittest.TestCase):
         fetch = Mock(side_effect=data.__getitem__)
         result = helper.verify(lock, REV, fetch=fetch)
         return result, fetch
+
+    def test_python310_uses_explicit_backport_or_actionable_dependency_error(self):
+        # A 3.10 interpreter cannot import tomllib. Exercise that exact import
+        # boundary using the compatible parser API, then parse a real Git lock.
+        with patch.dict(sys.modules, {"tomllib": None, "tomli": helper.tomllib}):
+            legacy = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(legacy)
+            lock = "\n".join('[[package]]\nname = "' + name + '"\nversion = "0.1.0"\nsource = "git+https://github.com/pubky/' + repo + '.git?rev=' + revision + '#' + revision + '"' for name, repo, revision in [("paykit-lib", "paykit-rs", REV), ("paykit-sdk", "paykit-rs", REV), ("locks-core", "locks", LOCKS)])
+            proof = legacy.verify(lock, REV)
+            self.assertEqual(proof["locks"]["revision"], LOCKS)
+        with patch.dict(sys.modules, {"tomllib": None, "tomli": None}):
+            missing = importlib.util.module_from_spec(spec)
+            with self.assertRaisesRegex(SystemExit, "apt-get install python3-tomli"):
+                spec.loader.exec_module(missing)
 
     def test_registry_checksums_and_actual_packaged_source_match_the_app(self):
         proof, fetch = self.check()

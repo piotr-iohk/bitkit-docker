@@ -8,10 +8,17 @@ import json
 import re
 import sys
 import tarfile
-import tomllib
 import urllib.parse
 import urllib.request
 from pathlib import Path, PurePosixPath
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        raise SystemExit("Paykit lock verification needs Python 3.11+ or tomli (Ubuntu: apt-get install python3-tomli)") from None
 
 SHA = re.compile(r"[0-9a-f]{40}")
 REGISTRY = "registry+https://github.com/rust-lang/crates.io-index"

@@ -321,7 +321,12 @@ the marketplace fixture's Pubky testnet. `fixture-issuer` publishes a regtest
 Paykit endpoint and sends one-time requests. `rc56-peer` can accept, reject,
 cancel and pay requests through the shared regtest Bitcoin node. Plain
 `docker compose up -d` does not start either peer. The commands below need
-`curl`, `jq` and `python3` on the host.
+`curl`, `jq` and Python 3.11+ on the host, or Python 3.10 with `tomli`
+(`sudo apt-get install python3-tomli` on Ubuntu). The QA guest setup installs this
+parser for existing Ubuntu 22.04 templates as well as newly prepared templates.
+The fixture build selects its acceptance API from the exact resolved SDK source:
+the legacy API stays available, while the stable API receives the observed
+proposal stream identity. An unknown API or missing proposal identity is refused.
 
 ```bash
 ./pubky-marketplace up
