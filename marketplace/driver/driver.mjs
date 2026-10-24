@@ -720,7 +720,7 @@ async function expectedAddress(xpub, child) {
 // Where a purchase is paid. A headless seller's address is derived from its xpub before the purchase is
 // delivered. A Bitkit seller's xpub never leaves its wallet and Paykit Server exposes neither the xpub nor the
 // derived address, so the fixture learns the address from the delivered Payment Request (`receive`), from the
-// operator (`mine --address`) or from the transaction that pays the exact amount.
+// operator (`mine --address` or `mine --txid` using the native transaction details).
 const paymentAddress = (purchase) => purchase.derived_address ?? purchase.payout_address ?? null;
 
 async function validatePayoutAddress(address) {
@@ -746,16 +746,31 @@ async function setPayoutAddress(purchases, purchase, address, source) {
 // The transaction that pays a purchase, whoever paid it. The headless buyer's `pay` records its txid; a
 // Bitkit buyer pays from the app, so the ledger has none. Match on the purchase's address and amount
 // instead: in the mempool first, then in the latest blocks (a confirmed payment is no longer in the mempool).
-// Without a known address, match the one p2wpkh output of exactly the amount.
+// An amount alone cannot identify a native purchase: an earlier baseline or an
+// unrelated payment can have the same amount. Require its known payout address
+// or an explicit txid observed in the native transaction details.
 const RECENT_BLOCKS = 50;
 
-async function findPaymentTx(purchase, { mempoolOnly = false } = {}) {
+async function findPaymentTx(purchase, { mempoolOnly = false, txid = null } = {}) {
   const address = paymentAddress(purchase);
+  if (!address && !txid) return null;
+  if (txid) {
+    if (!/^[0-9a-f]{64}$/.test(txid)) fail('--txid must be the exact lowercase native transaction id');
+    if (purchase.txid && purchase.txid !== txid) fail('the purchase already has a different transaction id');
+    if (mempoolOnly && !(await rpc('getrawmempool')).includes(txid)) return null;
+    const tx = await rpc('getrawtransaction', [txid, true]);
+    if (tx.txid !== txid) fail('the node returned a different transaction id');
+    const outputs = tx.vout.filter((output) =>
+      Math.round(output.value * 1e8) === purchase.amount_sats &&
+      (address ? output.scriptPubKey?.address === address : output.scriptPubKey?.type === 'witness_v0_keyhash'));
+    if (outputs.length !== 1) fail('the native transaction must have exactly one matching payout output; pass --address to disambiguate');
+    return { txid, confirmed: (tx.confirmations ?? 0) > 0, address: outputs[0].scriptPubKey.address };
+  }
   const paid = (tx) =>
     tx.vout.find(
       (output) =>
         Math.round(output.value * 1e8) === purchase.amount_sats &&
-        (address ? output.scriptPubKey?.address === address : output.scriptPubKey?.type === 'witness_v0_keyhash'),
+        output.scriptPubKey?.address === address,
     );
   const found = [];
   for (const txid of await rpc('getrawmempool')) {
@@ -782,8 +797,10 @@ async function findPaymentTx(purchase, { mempoolOnly = false } = {}) {
 
 // Remember the payment transaction in the ledger. Returns it, or null when the payment is not on chain yet.
 async function recordPaymentTx(purchases, purchase, options) {
-  const tx = purchase.txid && !options?.mempoolOnly ? { txid: purchase.txid } : await findPaymentTx(purchase, options);
+  const tx = purchase.txid && !options?.mempoolOnly && !options?.txid
+    ? { txid: purchase.txid } : await findPaymentTx(purchase, options);
   if (!tx) return null;
+  if (tx.address && !paymentAddress(purchase)) await validatePayoutAddress(tx.address);
   let changed = false;
   if (purchase.txid !== tx.txid) {
     purchase.txid = tx.txid;
@@ -792,7 +809,7 @@ async function recordPaymentTx(purchases, purchase, options) {
   }
   if (tx.address && !paymentAddress(purchase)) {
     purchase.payout_address = tx.address;
-    purchase.payout_address_source = 'amount_match';
+    purchase.payout_address_source = 'observed_txid';
     changed = true;
   }
   if (changed) await writeJson(PURCHASES_FILE, purchases);
@@ -959,6 +976,8 @@ async function statusCommand(args) {
     payout_address_source: purchase.derived_address ? 'seller_xpub' : (purchase.payout_address_source ?? null),
     amount_sats: purchase.amount_sats,
     txid: purchase.txid ?? null,
+    payment_binding_required: !paymentAddress(purchase) && !purchase.txid
+      ? 'Read the native TXID, then mine --bundle <id> --txid <native-txid>; or supply the known payout --address. Amount-only inference is refused.' : null,
     paykit_status: paykit,
     // Completed is the gate Locks applies with minimum_confirmations = 1.
     purchase_state: purchase.state,
@@ -989,10 +1008,11 @@ async function mine(args) {
     const { purchases, purchase } = await findPurchase(bundle);
     const address = flag(args, '--address');
     if (address) await setPayoutAddress(purchases, purchase, address, 'operator');
-    // The headless buyer's txid is in the ledger; for any other buyer find the payment by address and amount.
-    payment = purchase.txid && mempoolBefore.includes(purchase.txid)
-      ? { txid: purchase.txid }
-      : await recordPaymentTx(purchases, purchase, { mempoolOnly: true });
+    const txid = flag(args, '--txid') ?? purchase.txid ?? null;
+    if (!paymentAddress(purchase) && !txid) {
+      fail('the native payout is unknown; pass --txid <native TXID> or --address <known payout address>; amount-only inference is refused');
+    }
+    payment = await recordPaymentTx(purchases, purchase, { mempoolOnly: true, txid });
     if (!payment) fail('the purchase transaction is not in the mempool');
     payoutAddress = paymentAddress(purchase);
   }

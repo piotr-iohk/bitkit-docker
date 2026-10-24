@@ -739,10 +739,19 @@ To make a Bitkit wallet the seller, the wallet approves two Pubky requests for t
 ./pubky-marketplace setup-wait <flow>
 ./pubky-marketplace seller-auth                  # prints the marketplace grant request (first JSON line), waits for the approval (last line)
 ./pubky-marketplace purchase --seller bitkit --buyer <buyer pubky>
-./pubky-marketplace mine --bundle <bundle>       # after the buyer pays; add --address <bcrt1...> if two payments match the amount
+./pubky-marketplace mine --bundle <bundle> --txid <native-txid> # read TXID in the buyer's sent-activity details after paying
 ./pubky-marketplace wait <bundle> confirmed
 ./pubky-marketplace status <bundle>              # payout address, txid, signed Paykit status, purchase state
 ```
+
+For a native seller, the fixture cannot infer its payout address from an amount:
+an earlier wallet transfer can have the same amount. Read the transaction id in
+the buyer's native transaction details and pass `--txid` when mining. The fixture
+checks that exact mempool transaction and a unique amount-matched native SegWit
+output before binding it. Use `--address <known-payout-address>` too if the
+transaction has several equal outputs. A conflicting recorded transaction or
+address is refused. Before binding, `status` keeps the transaction/address null;
+read the Payment Request id from the native request row, not the bundle id.
 
 For an agent or a synchronous tool connection, use the split-phase grant flow
 instead of waiting inside `seller-auth`:

@@ -85,7 +85,7 @@ Purchase:
     receive <bundle>                   Headless buyer: receive the Payment Request and validate it
     pay <bundle>                       Headless buyer: pay the derived address from the regtest wallet
     status <bundle>                    Signed Paykit status and purchase state
-    mine [--bundle <id>] [--address <bcrt1...>]
+    mine [--bundle <id>] [--address <bcrt1...>] [--txid <native-txid>]
                                        Mine exactly one block; print height, hash and the purchase transaction.
                                        --address names the payout address of a Bitkit seller's purchase
     wait <bundle> <detected|confirmed> [seconds]
