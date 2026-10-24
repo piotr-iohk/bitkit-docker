@@ -101,6 +101,36 @@ class PaykitLockTests(unittest.TestCase):
             with self.subTest(mutate=mutate), self.assertRaisesRegex(ValueError, 'Exactly one locked'):
                 self.check(mutate_lock=mutate)
 
+    def test_registry_locks_verifies_its_own_repository_source_and_checksum(self):
+        name = 'locks-core'
+        manifest = b'[package]\nname = "locks-core"\nversion = "0.1.0"\n'
+        rust = b'pub const LOCK: u8 = 1;\n'
+        crate = archive({'locks-core-0.1.0/Cargo.toml': manifest,
+                         'locks-core-0.1.0/Cargo.toml.orig': manifest,
+                         'locks-core-0.1.0/src/lib.rs': rust,
+                         'locks-core-0.1.0/.cargo_vcs_info.json': json.dumps({'git': {'sha1': LOCKS}, 'path_in_vcs': name}).encode()})
+        package = {'name': name, 'version': '0.1.0', 'source': helper.REGISTRY, 'checksum': hashlib.sha256(crate).hexdigest()}
+        data = {'https://static.crates.io/crates/locks-core/locks-core-0.1.0.crate': crate,
+                'https://codeload.github.com/pubky/locks/tar.gz/' + LOCKS: archive({'locks-' + LOCKS + '/locks-core/Cargo.toml': manifest, 'locks-' + LOCKS + '/locks-core/src/lib.rs': rust})}
+        proof = helper.package_proof(package, 'locks', None, cache=None, fetch=data.__getitem__, sources={})
+        self.assertEqual(proof['revision'], LOCKS)
+        self.assertEqual(proof['tag'], 'v0.1.0')
+        self.assertIn('src/lib.rs', proof['comparedSourceFiles'])
+        package['checksum'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'checksum'):
+            helper.package_proof(package, 'locks', None, cache=None, fetch=data.__getitem__, sources={})
+
+    def test_repository_document_links_are_ignored_without_following_them(self):
+        output = io.BytesIO()
+        with tarfile.open(fileobj=output, mode='w:gz') as bundle:
+            link = tarfile.TarInfo('repository/CLAUDE.md')
+            link.type = tarfile.SYMTYPE
+            link.linkname = 'AGENTS.md'
+            bundle.addfile(link)
+        with self.assertRaisesRegex(ValueError, 'Unsafe'):
+            helper.archive_files(output.getvalue())
+        self.assertEqual(helper.archive_files(output.getvalue(), allow_links=True), {})
+
     def test_rejects_foreign_locks_source_and_unsafe_archive_paths(self):
         with self.assertRaisesRegex(ValueError, 'Unexpected Git'):
             self.check(mutate_lock=lambda packages: packages[-1].update(source='git+https://example.com/locks.git#' + LOCKS))
