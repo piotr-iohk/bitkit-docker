@@ -205,7 +205,7 @@ fetch_sources() {
 
 # The payment request fixture image on PAYKIT_RS_REV, built when missing (its Dockerfile moves the fixture's paykit-rs and Pubky pins).
 ensure_fixture() {
-  docker image inspect "$FIXTURE_IMAGE" >/dev/null 2>&1 && return 0
+  fixture_matches && return 0
   progress "building $FIXTURE_IMAGE on paykit-rs ${PAYKIT_RS_REV:0:8}"
   if docker buildx version >/dev/null 2>&1; then
     docker build -q -f payment-requests/Dockerfile --build-arg "PAYKIT_RS_REV=$PAYKIT_RS_REV" -t "$FIXTURE_IMAGE" payment-requests
@@ -213,6 +213,14 @@ ensure_fixture() {
     sed -E -e 's/^RUN --mount=[^ ]+ \\/RUN \\/' -e '/^[[:space:]]+--mount=/d' payment-requests/Dockerfile |
       docker build -q -f - --build-arg "PAYKIT_RS_REV=$PAYKIT_RS_REV" -t "$FIXTURE_IMAGE" payment-requests
   fi
+  fixture_matches || { echo "Built fixture does not match paykit-rs $PAYKIT_RS_REV" >&2; exit 1; }
+}
+
+fixture_matches() {
+  local actual
+  docker image inspect "$FIXTURE_IMAGE" >/dev/null 2>&1 || return 1
+  actual=$(docker run --rm --entrypoint cat "$FIXTURE_IMAGE" /usr/local/share/paykit-rs-rev 2>/dev/null) || return 1
+  [ "$actual" = "$PAYKIT_RS_REV" ]
 }
 
 # Paykit Server and the driver, which carries its helpers and the payment request fixture's `paykit-key-authorization` (scripts/follow-app-paykit sets the pins through the environment).
@@ -230,7 +238,6 @@ build_paykit() {
 build() {
   fetch_sources
   # the payment request fixture's image first: the driver copies its `paykit-key-authorization` from it
-  compose build homeserver-proxy
   ensure_fixture
   if docker buildx version >/dev/null 2>&1; then
     compose build pubky-testnet paykit-server
@@ -256,7 +263,7 @@ classic_build() {
 
 images_present() {
   docker image inspect bitkit-docker/pubky-testnet:0.14.0 "$PAYKIT_SERVER_IMAGE" \
-    "$DRIVER_IMAGE" bitkit-docker/payment-request-fixture:rc65-shared "$FIXTURE_IMAGE" >/dev/null 2>&1
+    "$DRIVER_IMAGE" "$FIXTURE_IMAGE" >/dev/null 2>&1 && fixture_matches
 }
 
 wait_ready() {

@@ -22,13 +22,21 @@ class ClassicBuilderTests(unittest.TestCase):
             with self.subTest(locks=locks):
                 result = helper.transform(self.source(locks), 'a'*40, 'b'*40, 'fix.patch')
                 self.assertIn('COPY paykit-server /build/paykit-server', result)
-                self.assertIn('COPY paykit-rs/paykit-sdk /build/paykit-rs/paykit-sdk', result)
-                self.assertEqual('COPY locks/Cargo.toml' in result, locks)
+                self.assertIn('COPY paykit-rs/paykit-sdk /contexts/paykit-sdk', result)
+                self.assertIn('cp -a /contexts/paykit-sdk /build/paykit-rs/paykit-sdk', result)
+                self.assertEqual('COPY locks /contexts/locks' in result, locks)
                 self.assertIn('cargo build --locked --release', result)
                 self.assertIn('COPY --from=builder /out/server /usr/local/bin/server', result)
                 self.assertIn('tech.masivo.paykit-server="' + 'a'*40 + '"', result)
                 self.assertNotIn('--mount', result)
                 self.assertNotIn('# syntax=', result)
+
+    def test_upstream_required_source_commands_are_never_discarded(self):
+        for locks in (False, True):
+            source = self.source(locks).replace('    set -eu;', '    test -f /contexts/paykit-lib/REQUIRED_SOURCE_SENTINEL; \\\n    set -eu;')
+            result = helper.transform(source, 'a'*40, 'b'*40, '')
+            self.assertIn('test -f /contexts/paykit-lib/REQUIRED_SOURCE_SENTINEL;', result)
+            self.assertIn('set -eu;', result)
 
     def test_rejects_unsupported_or_missing_build_contexts_instead_of_guessing(self):
         sources = [self.source().replace('COPY . /build/paykit-server', 'COPY . /other'),

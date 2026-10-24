@@ -24,14 +24,24 @@ def transform(text, server, paykit, patches):
                 if index >= len(lines):
                     raise ValueError('Unterminated source mount block')
                 block.append(lines[index])
-            mounts = set(re.findall(r'--mount=from=([^,\s]+)', ''.join(block)))
-            if not {'paykit-lib', 'paykit-sdk'} <= mounts or mounts - {'paykit-lib', 'paykit-sdk', 'locks'}:
+            mounts, body = [], []
+            for part in block:
+                if '--mount=' in part:
+                    mount = re.fullmatch(r'(?:RUN )?\s*--mount=from=(paykit-lib|paykit-sdk|locks),target=/contexts/\1,ro\s*\\\n', part)
+                    if not mount or mount[1] in mounts:
+                        raise ValueError('Unsupported named source contexts')
+                    mounts.append(mount[1])
+                else:
+                    body.append(part)
+            if not {'paykit-lib', 'paykit-sdk'} <= set(mounts) or not body:
                 raise ValueError('Unsupported named source contexts')
-            output += ['COPY paykit-rs/paykit-lib /build/paykit-rs/paykit-lib\n',
-                       'COPY paykit-rs/paykit-sdk /build/paykit-rs/paykit-sdk\n']
+            output += ['COPY paykit-rs/paykit-lib /contexts/paykit-lib\n',
+                       'COPY paykit-rs/paykit-sdk /contexts/paykit-sdk\n']
             if 'locks' in mounts:
-                output.append('COPY locks/Cargo.toml locks/Cargo.lock /build/locks/\n')
-                output += [f'COPY locks/{crate} /build/locks/{crate}\n' for crate in ('locks-core', 'locks-service', 'locks-server', 'locks-sdk', 'locks-e2e')]
+                output.append('COPY locks /contexts/locks\n')
+            # Preserve the entire upstream shell body, including future checks
+            # and preparation steps. Only the context transport changes.
+            output.append('RUN ' + ''.join(body).lstrip())
             named += 1
         else:
             output.append(line)
