@@ -14,6 +14,69 @@ import sys
 import uuid
 
 
+def decode_intent(plain):
+    """Read caf2b6d DeliveryIntentV1's Postcard v2 Bitcoin-only layout.
+
+    Struct field order and json_map_as_string follow application/semantic_intent.rs.
+    Quoted-rate intents need their own reviewed schema; never guess past them.
+    """
+    class Reader:
+        def __init__(self):
+            self.position = 0
+
+        def number(self, bound):
+            value = 0
+            for index in range(5):
+                if self.position >= len(plain):
+                    raise ValueError('Unsupported intent')
+                byte = plain[self.position]
+                self.position += 1
+                value |= (byte & 127) << (7 * index)
+                if byte < 128:
+                    if value > bound or (index and byte == 0):
+                        raise ValueError('Unsupported intent')
+                    return value
+            raise ValueError('Unsupported intent')
+
+        def text(self, bound):
+            length = self.number(bound)
+            end = self.position + length
+            if end > len(plain):
+                raise ValueError('Unsupported intent')
+            value = plain[self.position:end].decode('utf-8')
+            self.position = end
+            return value
+
+        def optional_text(self):
+            return self.text(128) if self.number(1) else None
+
+    reader = Reader()
+    version = reader.number(2)
+    recipient = reader.text(2048)
+    app_id = reader.text(64)
+    if version != 2 or app_id != 'paykit-server' or reader.number(1) != 0:
+        raise ValueError('Unsupported intent')
+    terms = {'amount': reader.text(64), 'asset': reader.text(32)}
+    if reader.number(64) != 0:
+        raise ValueError('Unsupported intent')
+    reader.text(4096)  # payment_reference stays private
+    reader.optional_text()
+    reader.optional_text()
+    terms['accepted_endpoint_identifiers'] = [reader.text(64) for _ in range(reader.number(8))]
+    endpoints = {}
+    for _ in range(reader.number(8)):
+        identifier, value = reader.text(64), reader.text(1024)
+        if identifier in endpoints:
+            raise ValueError('Unsupported intent')
+        endpoints[identifier] = value
+    terms['payment_endpoints'] = endpoints
+    terms['metadata'] = reader.text(32768)
+    if reader.position != len(plain):
+        raise ValueError('Unsupported intent')
+    return {'version': version, 'reader_pubky': recipient, 'app_id': app_id,
+            'operation': {'PaymentRequestProposal': {'terms': terms}}}
+
+
 def context(row):
     creator = bytes.fromhex(row['creator_hash'])
     if len(creator) != 32:
@@ -38,7 +101,7 @@ def project(row, encoded_key, bundle, request_id):
         raise ValueError('Unsupported envelope')
     plain = crypto_aead_xchacha20poly1305_ietf_decrypt(
         envelope[25:], context(row), envelope[1:25], key)
-    intent = json.loads(plain)
+    intent = decode_intent(plain)
     if intent['version'] != 2 or intent['app_id'] != 'paykit-server':
         raise ValueError('Unsupported intent')
     terms = intent['operation']['PaymentRequestProposal']['terms']

@@ -739,16 +739,29 @@ sudo apt-get install python3-nacl
 ```
 
 This reads one delivered request's authenticated durable SDK handoff and prints
-only its correlated UUID, lowercase asset, amount and regtest endpoint JSON.
+only its correlated UUID, actual asset, amount and regtest endpoint JSON.
 Compare that UUID with the native row. It never accepts/pays, imports a session,
 changes the database or exports fixture keys. It supports the app-aligned
-semantic-outbox server (`caf2b6d`); older layouts fail explicitly. A request not
+semantic-outbox server (`caf2b6d`), whose version-2 intent uses Postcard binary
+serialization. The endpoint payload inside it is a JSON string. This observer
+supports unquoted Bitcoin intents with no conversion rates; quoted/unknown
+schemas and older layouts fail explicitly. A request not
 yet acknowledged as delivered can be polled read-only. The native request UUID
 and the purchase bundle are different identities. The QA worker installs PyNaCl
 inside its disposable guest; operator credentials stay outside it.
 
 Fixture tests use `python3 -m pip install PyNaCl==1.6.0` in a private virtualenv,
 then that Python's `-m unittest discover -s scripts -p 'test_*.py'`.
+The checked-in request golden is serialized by Rust Postcard 1.1.3, matching
+the pinned server lockfile. Tests compare it with an independent Node writer,
+decrypt it, and reject the previous JSON-intent assumption, truncated input,
+trailing bytes and unsupported layouts. Reproduce its bytes with:
+
+```sh
+cargo run --quiet --locked --manifest-path scripts/testdata/postcard-intent-generator/Cargo.toml \
+  < scripts/testdata/request-v2-intent.json
+# Compare stdout with scripts/testdata/request-v2.postcard.hex.
+```
 
 Pay the request in the app, then confirm with `./pubky-marketplace mine --bundle <bundle>`, `./pubky-marketplace wait <bundle> confirmed` and `./pubky-marketplace status <bundle>`. By default the seller of a purchase is the fixture's headless seller, and `verify` always uses it.
 

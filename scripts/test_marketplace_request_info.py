@@ -18,14 +18,27 @@ MASTER = bytes(range(32))
 SECRET = base64.urlsafe_b64encode(MASTER).decode().rstrip('=')
 
 
-def fixture(change=None):
+def intent_fixture(change=None):
     terms = {'amount': '0.00002000', 'asset': 'btc',
+             'rates': [], 'payment_reference': 'private-reference',
+             'proposal_expires_at': None, 'payment_deadline': None,
              'accepted_endpoint_identifiers': ['btc-regtest-p2wpkh'],
              'payment_endpoints': {'btc-regtest-p2wpkh': '{"value":"bcrt1qtestpayment1234567890"}'},
              'metadata': json.dumps({'bundle_id': BUNDLE, 'private_marker': 'never-export-me'})}
     intent = {'version': 2, 'app_id': 'paykit-server', 'reader_pubky': 'private-reader-marker',
               'operation': {'PaymentRequestProposal': {'terms': terms}}}
     if change: change(intent)
+    return intent
+
+
+def encoded_intent(intent):
+    return bytes.fromhex(subprocess.check_output(
+        ['node', str(Path(__file__).with_name('testdata') / 'postcard-intent-fixture.mjs')],
+        input=json.dumps(intent), text=True))
+
+
+def fixture(change=None, plaintext=None):
+    intent = intent_fixture(change)
     row = {'row_id': 'a51ca4e9-b878-4fdb-9d41-cea21d1ad8ec',
            'creator_hash': 'ab'*32, 'request_id': REQUEST, 'status': 'delivered'}
     # Independent Node HKDF implementation, upstream labels and explicit AAD;
@@ -34,12 +47,44 @@ def fixture(change=None):
     parts = [b'paykit-server', bytes([1]), b'outbox-semantic-intent', bytes.fromhex('ab'*32), bytes.fromhex('a51ca4e9b8784fdb9d41cea21d1ad8ec')]
     aad = b''.join(len(p).to_bytes(4,'big')+p for p in parts)
     nonce = bytes(range(24))
-    cipher = crypto_aead_xchacha20poly1305_ietf_encrypt(json.dumps(intent).encode(), aad, nonce, bytes.fromhex(key))
+    cipher = crypto_aead_xchacha20poly1305_ietf_encrypt(
+        encoded_intent(intent) if plaintext is None else plaintext, aad, nonce, bytes.fromhex(key))
     row['envelope'] = (bytes([1])+nonce+cipher).hex()
     return row
 
 
 class RequestInfo(unittest.TestCase):
+    def test_rust_postcard_113_golden_matches_independent_writer_and_authenticated_projection(self):
+        directory = Path(__file__).with_name('testdata')
+        intent = json.loads((directory / 'request-v2-intent.json').read_text())
+        golden = bytes.fromhex((directory / 'request-v2.postcard.hex').read_text())
+        self.assertEqual(encoded_intent(intent), golden)
+        value = module.project(fixture(plaintext=golden), SECRET, BUNDLE, REQUEST)
+        self.assertEqual(value['asset'], 'btc')
+        self.assertEqual(value['endpoints'][0]['value'], 'bcrt1qtestpayment1234567890')
+        for length in range(len(golden)):
+            with self.subTest(truncated=length), self.assertRaises(Exception):
+                module.decode_intent(golden[:length])
+        rate_index = golden.index(b'\x03btc\x00') + 4
+        with self.assertRaises(Exception):
+            module.decode_intent(golden[:rate_index] + b'\x01' + golden[rate_index+1:])
+
+    def test_real_postcard_encoding_rejects_the_previous_json_assumption(self):
+        raw = encoded_intent(intent_fixture())
+        self.assertEqual(module.decode_intent(raw), {
+            'version': 2, 'reader_pubky': 'private-reader-marker', 'app_id': 'paykit-server',
+            'operation': {'PaymentRequestProposal': {'terms': {
+                key: value for key, value in intent_fixture()['operation']['PaymentRequestProposal']['terms'].items()
+                if key in ('amount','asset','accepted_endpoint_identifiers','payment_endpoints','metadata')}}}})
+        for malformed in (json.dumps(intent_fixture()).encode(), raw[:-1], raw + b'\x00',
+                          b'\x82\x00' + raw[1:], raw[:2], b'\x02' + b'\xff'*5):
+            with self.subTest(size=len(malformed)), self.assertRaises(Exception):
+                module.project(fixture(plaintext=malformed), SECRET, BUNDLE, REQUEST)
+        value = module.project(fixture(lambda i:i['operation']['PaymentRequestProposal']['terms'].update(
+            proposal_expires_at='2026-10-24T12:00:00Z', payment_deadline='2026-10-24T13:00:00Z')),
+            SECRET, BUNDLE, REQUEST)
+        self.assertTrue(value['endpoints'][0]['public_bitcoin_json'])
+
     def test_delivered_request_reports_exact_authenticated_endpoint_and_no_other_data(self):
         value = module.project(fixture(), SECRET, BUNDLE, REQUEST)
         self.assertEqual(value['payment_request_id'], REQUEST)
