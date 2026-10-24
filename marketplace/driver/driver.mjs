@@ -589,6 +589,7 @@ async function seed(args) {
     await approveSetupAs(authUrl, identitySeed, xpub, ACCOUNT_INDEX);
     await completeSetup(flowId);
     fixture = {
+      ...fixture,
       homeserver: HOMESERVER,
       seller: {
         pubky: sellerPubky,

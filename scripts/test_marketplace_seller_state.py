@@ -52,5 +52,34 @@ class NativeSellerState(unittest.TestCase):
         self.assertIn('await readJson(FIXTURE_FILE, {})',adopt)
         self.assertIn('rememberBitkitSeller',adopt)
 
+    def test_seeding_a_headless_seller_preserves_existing_native_state(self):
+        # Execute the actual async seed function; replace only external key,
+        # storage and service boundaries with isolated in-memory counterparts.
+        self.run_node("""
+        const fs=await import('node:fs'); const vm=await import('node:vm');
+        const source=fs.readFileSync('./marketplace/driver/driver.mjs','utf8');
+        const begin=source.indexOf('async function seed(args) {');
+        const end=source.indexOf('const flagPresent =',begin);
+        assert.ok(begin>=0 && end>begin);
+        const initial={bitkit_seller:{pubky:'native',setup_completed_at:'approved'},buyer:{pubky:'existing-buyer'},other:'preserved'};
+        let state=structuredClone(initial);let writes=0;
+        const sandbox={
+          SERVER_PATH:'bitkit/server',FIXTURE_FILE:'/state/fixture.json',SECRETS:'/state/secrets',HOMESERVER:'testnet',ACCOUNT_INDEX:0,
+          flag:(args,name)=>args[args.indexOf(name)+1],flagPresent:(args,name)=>args.includes(name),
+          waitForPaykit:async()=>{},ensureMatureCoins:async()=>{},readJson:async()=>structuredClone(state),
+          b64url:(bytes)=>bytes.toString('base64url'),randomBytes:()=>Buffer.alloc(32,1),
+          HDKey:{fromMasterSeed:()=>({derive:()=>({publicExtendedKey:'tpub-test'})})},
+          writeSecret:async()=>{},signUpIdentity:async()=>'headless',log:()=>{},fail:(s)=>{throw Error(s)},
+          beginSetup:async()=>({flowId:'test',authUrl:'test-only'}),approveSetupAs:async()=>{},completeSetup:async()=>{},
+          writeJson:async(_path,value)=>{state=structuredClone(value);writes++},publicInfo:async()=>state,out:()=>{},
+        };
+        vm.createContext(sandbox);vm.runInContext(source.slice(begin,end)+';globalThis.seed=seed;',sandbox);
+        await sandbox.seed(['--buyer','none']);
+        assert.deepEqual(state.bitkit_seller,initial.bitkit_seller);
+        assert.deepEqual(state.buyer,initial.buyer);assert.equal(state.other,'preserved');
+        assert.equal(state.seller.pubky,'headless');assert.equal(writes,1);
+        await sandbox.seed(['--buyer','none']);assert.equal(writes,1);
+        """)
+
 
 if __name__ == '__main__':unittest.main()
